@@ -30,7 +30,9 @@ export class LootField {
   private dummy = new THREE.Object3D();
   private time = 0;
 
-  constructor(hf: Heightfield) {
+  constructor(hf: Heightfield, interiorSpots: THREE.Vector3[] = []) {
+    // Interior spots get first claim — buildings are where loot belongs.
+    const spotPool = [...interiorSpots];
     let salt = 0;
     for (const type of Object.keys(COUNTS) as LootType[]) {
       const count = COUNTS[type];
@@ -52,12 +54,20 @@ export class LootField {
       while (placed < count && attempt < count * 40) {
         attempt++;
         salt++;
-        // Cluster near roads (village plateau is roaddist-small too).
-        const x = (hash2(salt, 11) - 0.5) * 1000;
-        const z = (hash2(salt, 23) - 0.5) * 1000;
-        if (!hf.walkable(x, z)) continue;
-        if (hf.roadDistance(x, z) > 60) continue;
-        const pos = new THREE.Vector3(x, hf.height(x, z) + SIZE[type][1] / 2 + 0.02, z);
+        let pos: THREE.Vector3;
+        if (spotPool.length > 0 && hash2(salt, 5) > 0.35) {
+          const idx = Math.floor(hash2(salt, 31) * spotPool.length);
+          const spot = spotPool.splice(idx, 1)[0];
+          pos = spot.clone();
+          pos.y += SIZE[type][1] / 2;
+        } else {
+          // Cluster near roads (village plateau is roaddist-small too).
+          const x = (hash2(salt, 11) - 0.5) * 1000;
+          const z = (hash2(salt, 23) - 0.5) * 1000;
+          if (!hf.walkable(x, z)) continue;
+          if (hf.roadDistance(x, z) > 60) continue;
+          pos = new THREE.Vector3(x, hf.height(x, z) + SIZE[type][1] / 2 + 0.02, z);
+        }
         this.items.push({ type, pos, taken: false, index: placed });
         this.dummy.position.copy(pos);
         this.dummy.rotation.y = hash2(salt, 7) * Math.PI;

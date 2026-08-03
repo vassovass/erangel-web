@@ -23,6 +23,7 @@ import { Viewmodel } from './weapons/viewmodel';
 import { AudioSystem } from './gen/audiogen';
 import { Hud } from './ui/hud';
 import { Match } from './match/match';
+import { buildSettlements } from './world/buildings';
 
 const loadbar = document.getElementById('loadbar')!;
 const loadstep = document.getElementById('loadstep')!;
@@ -63,6 +64,11 @@ async function boot(): Promise<void> {
   await progress(85, 'sea');
   scene.add(createWater());
 
+  await progress(90, 'settlements');
+  const physics = new PhysicsWorld(hf);
+  const built = buildSettlements(hf, factory, physics);
+  scene.add(built.group);
+
   // Sun shadow volume follows the camera.
   engine.onBeforeRender(() => {
     const p = camera.position;
@@ -88,7 +94,6 @@ async function boot(): Promise<void> {
   } else {
     // ---- Game mode: player + weapon + FX + audio + HUD ----
     const input = new Input(renderer.domElement);
-    const physics = new PhysicsWorld(hf);
     const audio = new AudioSystem();
 
     const spawnX = 10, spawnZ = 95;
@@ -110,7 +115,7 @@ async function boot(): Promise<void> {
       }
     };
 
-    const match = new Match(scene, hf, physics, ballistics, player, health, camera, audio);
+    const match = new Match(scene, hf, physics, ballistics, player, health, camera, audio, built.lootSpots);
     const hud = new Hud(weapon, health, match, player);
     let hudRef: Hud | null = hud;
 

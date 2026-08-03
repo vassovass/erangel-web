@@ -44,12 +44,13 @@ export class Match {
     private player: PlayerController,
     private playerHealth: Health,
     private camera: THREE.PerspectiveCamera,
-    private audio: AudioSystem
+    private audio: AudioSystem,
+    lootSpots: THREE.Vector3[] = []
   ) {
     this.zone = new ZoneController();
     this.wall = new ZoneWall();
     scene.add(this.wall.mesh);
-    this.loot = new LootField(hf);
+    this.loot = new LootField(hf, lootSpots);
     scene.add(this.loot.group);
 
     this.playerCapsuleId = physics.addCapsule(player.position, 0.38, 1.75, 'player');
