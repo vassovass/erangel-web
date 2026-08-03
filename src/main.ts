@@ -24,6 +24,7 @@ import { AudioSystem } from './gen/audiogen';
 import { Hud } from './ui/hud';
 import { Match } from './match/match';
 import { buildSettlements } from './world/buildings';
+import { Vegetation } from './world/vegetation';
 
 const loadbar = document.getElementById('loadbar')!;
 const loadstep = document.getElementById('loadstep')!;
@@ -64,10 +65,15 @@ async function boot(): Promise<void> {
   await progress(85, 'sea');
   scene.add(createWater());
 
-  await progress(90, 'settlements');
+  await progress(88, 'settlements');
   const physics = new PhysicsWorld(hf);
   const built = buildSettlements(hf, factory, physics);
   scene.add(built.group);
+
+  await progress(92, 'vegetation');
+  const vegetation = new Vegetation(hf, camera, physics, (params.seedOverride ?? WORLD_SEED) + 5000);
+  scene.add(vegetation.group);
+  engine.add(vegetation);
 
   // Sun shadow volume follows the camera.
   engine.onBeforeRender(() => {
