@@ -25,6 +25,7 @@ import { Hud } from './ui/hud';
 import { Match } from './match/match';
 import { buildSettlements } from './world/buildings';
 import { Vegetation } from './world/vegetation';
+import { PostPipeline } from './post/pipeline';
 
 const loadbar = document.getElementById('loadbar')!;
 const loadstep = document.getElementById('loadstep')!;
@@ -39,6 +40,7 @@ function progress(pct: number, label: string): Promise<void> {
 async function boot(): Promise<void> {
   const params = parseBootParams();
   const container = document.getElementById('app')!;
+  const urlqEarly = new URLSearchParams(location.search);
 
   await progress(5, 'renderer');
   const renderer = createRenderer(container);
@@ -75,6 +77,13 @@ async function boot(): Promise<void> {
   scene.add(vegetation.group);
   engine.add(vegetation);
 
+  // Post pipeline (SMAA/bloom/grade). ?nopost=1 for raw A/B comparison.
+  if (!urlqEarly.has('nopost')) {
+    const post = new PostPipeline(renderer, scene, camera);
+    post.setSize(window.innerWidth, window.innerHeight);
+    engine.pipeline = post;
+  }
+
   // Sun shadow volume follows the camera.
   engine.onBeforeRender(() => {
     const p = camera.position;
@@ -90,6 +99,15 @@ async function boot(): Promise<void> {
     if (!pose) throw new Error(`Unknown shot pose '${params.shot}'`);
     applyPose(camera, hf, pose);
     signalReadyAfter(40, renderer);
+    // Re-pose without a reload: capture.mjs boots once per cycle and calls this.
+    (window as unknown as Record<string, unknown>).__APPLY_POSE__ = (name: string) => {
+      const p = findPose(name);
+      if (!p) return false;
+      window.__SHOT_READY__ = undefined;
+      applyPose(camera, hf, p);
+      signalReadyAfter(30, renderer);
+      return true;
+    };
   } else if (params.mode === 'bench') {
     engine.add(new BenchFly(engine, hf));
   } else if (urlq.has('fly')) {

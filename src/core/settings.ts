@@ -17,7 +17,7 @@ export interface Quality {
 
 export const quality: Quality = {
   renderScale: 1.0,
-  msaa: true,
+  msaa: false, // SMAA in the post pipeline replaces hardware MSAA
   shadowMapSize: 1024,
   shadowCascades: 2,
   shadowDistance: 140,

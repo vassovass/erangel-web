@@ -170,11 +170,24 @@ async function main() {
       const poses = (opt('poses') || '').split(',').filter(Boolean);
       if (poses.length === 0) throw new Error('--poses is required for shot capture');
       mkdirSync(resolve(out), { recursive: true });
+      // World-gen is expensive: boot ONCE on the first pose, then re-pose in-page.
+      let booted = false;
       for (const pose of poses) {
-        const url = `${base}/?shot=${pose}${tod ? `&tod=${tod}` : ''}`;
-        console.log(`shot: ${url}`);
-        await page.goto(url, { waitUntil: 'load', timeout: 60000 });
-        await waitForGlobal(page, '__SHOT_READY__', 90000);
+        if (!booted) {
+          const url = `${base}/?shot=${pose}${tod ? `&tod=${tod}` : ''}`;
+          console.log(`shot: ${url}`);
+          await page.goto(url, { waitUntil: 'load', timeout: 60000 });
+          await waitForGlobal(page, '__SHOT_READY__', 240000);
+          booted = true;
+        } else {
+          console.log(`shot (re-pose): ${pose}`);
+          const ok = await page.evaluate((p) => window.__APPLY_POSE__ && window.__APPLY_POSE__(p), pose);
+          if (!ok) {
+            console.error(`  !! unknown pose ${pose}, skipped`);
+            continue;
+          }
+          await waitForGlobal(page, '__SHOT_READY__', 60000);
+        }
         const file = resolve(out, `${pose}.png`);
         await page.screenshot({ path: file });
         const info = await page.evaluate(() => (window.__INFO__ ? window.__INFO__() : null));

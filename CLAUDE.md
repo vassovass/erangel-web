@@ -25,7 +25,12 @@ draw calls at 1080p. three r185 / WebGL2 / TypeScript / Vite.**
 
 ## Gotchas (earned knowledge — do not rediscover)
 
-- GLSL ES reserved words WILL silently break texgen recipes: never name variables `patch`, `sample`, `filter`, `input`, `output`, `buffer`. Recipe shader errors surface as `[console.error]` lines in capture output — always check them.
+- GLSL ES reserved words WILL silently break texgen recipes: never name variables `patch`, `sample`, `filter`, `input`, `output`, `buffer`, `flat`. Recipe shader errors surface as `[console.error]` lines in capture output — always check them.
+- The texgen GLSL noise lattice takes ONE scalar period. Non-uniform scales must keep axes in an integer ratio with the SMALLER scale passed as the period, or the texture never tiles (rule documented atop src/materials/library.ts).
+- Nothing driving ALBEDO may run below ~16 lattice cells per tile — low-frequency blobs baked into a texture tile in lockstep and no stochastic sampling hides them. Macro variation belongs in the surface shader at world scale.
+- three applies fog AFTER tone mapping: fog color is a display-space value. Anything blending toward the haze must do it post-colorspace to match.
+- Sky/water animate on a FRAME COUNTER, not wall clock, so captures are byte-reproducible. Keep it that way for anything animated that appears in review shots.
+- Boot costs ~2min/pose in capture (splat/field map bake is 1M height queries). Batch all poses into ONE capture call per cycle; SPLAT_SIZE 1024→768 in terrain.ts is the approved lever if it gets worse.
 - Headless capture MUST use ANGLE D3D11 (`--use-angle=d3d11` already set in capture.mjs). `--use-angle=gl` crashes this Intel driver's GPU process.
 - Textures bake into render targets: albedo is an sRGB RT with HEIGHT in alpha (alpha stays linear). Author albedo in sRGB inside recipes; `srgb2lin` is applied by the wrapper.
 - Terrain material is a patched MeshStandardMaterial; if you change its onBeforeCompile string, bump `customProgramCacheKey`.

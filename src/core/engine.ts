@@ -14,10 +14,17 @@ const MAX_STEPS = 5;
  * Render/update loop with a fixed 60Hz simulation step decoupled from the
  * render rate, plus frame-time sampling for the bench harness.
  */
+export interface RenderPipeline {
+  render(dt: number): void;
+  setSize(w: number, h: number): void;
+}
+
 export class Engine {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
+  /** Optional post pipeline; when set it replaces the direct renderer call. */
+  pipeline: RenderPipeline | null = null;
 
   private systems: System[] = [];
   private accumulator = 0;
@@ -73,7 +80,8 @@ export class Engine {
     const alpha = this.accumulator / FIXED_DT;
     for (const s of this.systems) s.update?.(frame, alpha);
     for (const fn of this.beforeRender) fn(frame);
-    this.renderer.render(this.scene, this.camera);
+    if (this.pipeline) this.pipeline.render(frame);
+    else this.renderer.render(this.scene, this.camera);
   }
 
   /** Frame-time stats over the last `seconds` of samples (for the bench). */
@@ -103,5 +111,6 @@ export class Engine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.pipeline?.setSize(w, h);
   }
 }
