@@ -48,7 +48,10 @@ async function startPreview(attempt = 0) {
 
 async function startPreviewOnce() {
   const port = 4300 + Math.floor(Math.random() * 400);
-  const child = spawn('npx', ['vite', 'preview', '--port', String(port), '--strictPort'], {
+  const dist = opt('dist');
+  const previewArgs = ['vite', 'preview', '--port', String(port), '--strictPort'];
+  if (dist) previewArgs.push('--outDir', dist);
+  const child = spawn('npx', previewArgs, {
     cwd: resolve(import.meta.dirname, '..'),
     shell: true,
     stdio: ['ignore', 'pipe', 'pipe'],

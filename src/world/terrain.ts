@@ -152,7 +152,7 @@ export class Terrain {
     const mat = new THREE.MeshStandardMaterial({
       roughness: 1.0,
       metalness: 0.0,
-      envMapIntensity: 0.34,
+      envMapIntensity: 0.26,
     });
 
     mat.onBeforeCompile = (shader) => {
@@ -289,13 +289,18 @@ vec3 parcelTint(float t) {
   float farm = gFld.a;
   if (farm > 0.01) {
     col *= mix(vec3(1.0), parcelTint(gFld.r), farm * (0.55 + 0.45 * gW.r));
-    vec2 fdir = normalize(gFld.gb * 2.0 - 1.0 + vec2(1e-4, 1e-4));
-    float rowSpace = 2.3 + 4.4 * fract(gFld.r * 6.37);
-    float phase = dot(vWPos.xz, fdir) * 6.28318 / rowSpace;
-    // Fade rows out once a pixel spans more than a row: keeps them off the
-    // aliasing budget at vista range.
-    float aa = 1.0 - smoothstep(1.4, 4.2, fwidth(phase));
-    col *= 1.0 + sin(phase) * 0.15 * farm * aa;
+    // Not every parcel is a ploughed crop — roughly a third stay as pasture,
+    // otherwise the whole island reads as corduroy.
+    float rowed = smoothstep(0.30, 0.40, fract(gFld.r * 3.11));
+    if (rowed > 0.01) {
+      vec2 fdir = normalize(gFld.gb * 2.0 - 1.0 + vec2(1e-4, 1e-4));
+      float rowSpace = 2.3 + 4.4 * fract(gFld.r * 6.37);
+      float phase = dot(vWPos.xz, fdir) * 6.28318 / rowSpace;
+      // Fade rows out once a pixel spans more than a row: keeps them off the
+      // aliasing budget at vista range.
+      float aa = 1.0 - smoothstep(1.4, 4.2, fwidth(phase));
+      col *= 1.0 + sin(phase) * 0.13 * farm * aa * rowed;
+    }
   }
 
   // Macro breakup: large luminance swings plus a slow warm/cool hue drift.

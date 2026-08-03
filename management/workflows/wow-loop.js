@@ -77,8 +77,8 @@ CONSTRAINTS: draw calls <= 400 total (check the "calls:" output of capture). The
 WORK LOOP:
 1. Implement improvements (deterministic in WORLD_SEED — no Math.random in gen paths).
 2. npx tsc --noEmit — must be clean.
-3. npx vite build — must succeed.
-4. node tools/capture.mjs --poses ${POSES} --out review/shots/${item}/cycle-${cycle}
+3. npx vite build --outDir dist-${item} — must succeed (own outDir: other lanes build in parallel; NEVER build plain dist/).
+4. node tools/capture.mjs --poses ${POSES} --out review/shots/${item}/cycle-${cycle} --dist dist-${item}
    Any [console.error] THREE lines = a shader broke: fix before proceeding. Read at least 2 captured PNGs yourself before returning (black/white/garbled = broken, fix first).
 5. Blind pair: copy review/shots/${item}/cycle-${cycle}/${heroPose}.png to ${blindDir}/${oursTo} and ${refPick} to ${blindDir}/${refTo} (create the dir).
 6. Append to the Log in management/PROGRESS.md: "- ${item} cycle ${cycle}: <one-line summary>".
@@ -90,7 +90,7 @@ Return JSON: summary, buildOk, shotsDir, drawCalls, notes.`,
   if (!exec || !exec.buildOk) {
     log(`cycle ${cycle}: executor failed — repair attempt`)
     const retry = await agent(
-      `The previous ${item} executor cycle in the ERANGEL-web project (cwd) left the build broken or unfinished. Run "npx tsc --noEmit" and "npx vite build", fix whatever is broken (read CLAUDE.md gotchas), then run: node tools/capture.mjs --poses ${POSES} --out review/shots/${item}/cycle-${cycle} and create the blind pair: copy review/shots/${item}/cycle-${cycle}/${heroPose}.png to ${blindDir}/${oursTo} and ${refPick} to ${blindDir}/${refTo}. Return the same JSON schema.`,
+      `The previous ${item} executor cycle in the ERANGEL-web project (cwd) left the build broken or unfinished. Run "npx tsc --noEmit" and "npx vite build --outDir dist-${item}", fix whatever is broken (read CLAUDE.md gotchas), then run: node tools/capture.mjs --poses ${POSES} --out review/shots/${item}/cycle-${cycle} --dist dist-${item} and create the blind pair: copy review/shots/${item}/cycle-${cycle}/${heroPose}.png to ${blindDir}/${oursTo} and ${refPick} to ${blindDir}/${refTo}. Return the same JSON schema.`,
       { label: `repair:${item}-c${cycle} [opus-5/xhigh]`, phase: 'Cycle', model: 'opus', effort: 'xhigh', schema: EXEC_SCHEMA }
     )
     if (!retry || !retry.buildOk) {

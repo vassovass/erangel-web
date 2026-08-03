@@ -29,15 +29,17 @@ export function createWater(): THREE.Mesh {
     metalness: 0.0,
     transparent: true,
     opacity: 1.0,
-    envMapIntensity: 1.15,
+    // A full-strength mirror of a bright sky renders the sea white at grazing
+    // angles. Real water loses a lot to subsurface absorption first.
+    envMapIntensity: 0.72,
   });
 
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = uTime;
     shader.uniforms.uSunDir = { value: sunDir.clone() };
     shader.uniforms.uSunCol = { value: new THREE.Vector3(1.0, 0.82, 0.60) };
-    shader.uniforms.uDeep = { value: new THREE.Color(0x08262e) };
-    shader.uniforms.uShallow = { value: new THREE.Color(0x1c5f61) };
+    shader.uniforms.uDeep = { value: new THREE.Color(0x0a3038) };
+    shader.uniforms.uShallow = { value: new THREE.Color(0x22706c) };
     shader.uniforms.uHaze = { value: new THREE.Color().setRGB(haze[0], haze[1], haze[2], THREE.SRGBColorSpace) };
 
     shader.vertexShader = shader.vertexShader

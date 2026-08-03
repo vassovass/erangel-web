@@ -37,9 +37,9 @@ void materialSample(in vec2 uv, out vec3 albedo, out float height, out float rou
   // Sparse soil shows through where blades thin out.
   float soil = smoothstep(0.36, 0.22, blades);
 
-  vec3 lush = vec3(0.216, 0.271, 0.129);
-  vec3 dry = vec3(0.400, 0.384, 0.196);
-  vec3 straw = vec3(0.510, 0.462, 0.255);
+  vec3 lush = vec3(0.235, 0.278, 0.122);
+  vec3 dry = vec3(0.435, 0.404, 0.192);
+  vec3 straw = vec3(0.549, 0.482, 0.251);
   vec3 grassCol = mix(lush, dry, smoothstep(0.32, 0.68, mid));
   grassCol = mix(grassCol, straw, smoothstep(0.54, 0.88, blades) * 0.5);
   vec3 soilCol = vec3(0.243, 0.192, 0.137);
@@ -102,11 +102,11 @@ void materialSample(in vec2 uv, out vec3 albedo, out float height, out float rou
 
   // Erangel rock is dark grey-brown schist. The first pass read as a snowcap
   // under a low sun — these values are deliberately well under half grey.
-  vec3 dark = vec3(0.129, 0.125, 0.118);
-  vec3 mid = vec3(0.235, 0.224, 0.204);
-  vec3 warm = vec3(0.294, 0.255, 0.200);
+  vec3 dark = vec3(0.180, 0.169, 0.153);
+  vec3 mid = vec3(0.306, 0.282, 0.243);
+  vec3 warm = vec3(0.384, 0.325, 0.251);
   albedo = mix(dark, mid, strata);
-  albedo = mix(albedo, warm, smoothstep(0.5, 0.9, fracture) * 0.45);
+  albedo = mix(albedo, warm, smoothstep(0.5, 0.9, fracture) * 0.5);
   albedo *= 0.82 + chip * 0.20 + fine * 0.10;
   // Lichen and moss in the cavities: rock is never one flat grey.
   float moss = smoothstep(0.35, 0.1, fracture) * vnoise(p * 9.0, uPeriod * 9.0);

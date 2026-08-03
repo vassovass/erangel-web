@@ -49,8 +49,8 @@ export function sunDirectionFor(timeOfDay: number): THREE.Vector3 {
  */
 export function hazeSrgbFor(timeOfDay: number): [number, number, number] {
   const warm = 1 - Math.min(sunElevationFor(timeOfDay) / 50, 1);
-  const cool = [0.60, 0.685, 0.782];
-  const hot = [0.84, 0.755, 0.652];
+  const cool = [0.515, 0.600, 0.706];
+  const hot = [0.780, 0.700, 0.596];
   const t = warm * 0.5;
   return [
     cool[0] + (hot[0] - cool[0]) * t,
@@ -210,7 +210,7 @@ export function createAtmosphere(timeOfDay: number): Atmosphere {
     cloudDensity: 0.92,
     cloudLum: 2.5,
     haze,
-    hazeStrength: 0.62,
+    hazeStrength: 0.45,
     sunTint: new THREE.Vector3(1.0, 0.78, 0.52),
   };
   patchSky(sky, dials, sunDir, true);
@@ -224,7 +224,7 @@ export function createAtmosphere(timeOfDay: number): Atmosphere {
 
   // Sun colour cools as it climbs.
   const sunColor = new THREE.Color().setHSL(0.095 - warmth * 0.03, 0.55 + warmth * 0.3, 0.62 - warmth * 0.1);
-  const sun = new THREE.DirectionalLight(sunColor, 3.45);
+  const sun = new THREE.DirectionalLight(sunColor, 3.8);
   sun.position.copy(sunDir).multiplyScalar(600);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -242,7 +242,9 @@ export function createAtmosphere(timeOfDay: number): Atmosphere {
 
   // Ambient stays deliberately low. The washed-out look in the phase 0 smoke
   // shots was ambient fill, not exposure.
-  const hemi = new THREE.HemisphereLight(0xa8bcd4, 0x6a5c42, 0.22);
+  // A blue sky term this strong is what turned the shaded hill faces slate; the
+  // bounce off dry Erangel farmland is warm, not cold.
+  const hemi = new THREE.HemisphereLight(0xb9c2c6, 0x7d6844, 0.20);
 
   return {
     sky,

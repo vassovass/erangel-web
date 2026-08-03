@@ -202,11 +202,14 @@ export class Heightfield {
     const par = this.parcel(x, z);
 
     const rockNoise = this.splatNoise.fbm(x / 70, z / 70, { octaves: 3 });
+    // Slow band that shifts the rock threshold, so exposure comes in OUTCROPS
+    // along the faces instead of coating every steep surface evenly.
+    const outcrop = this.splatNoise.fbm(x / 145 + 51.3, z / 145 - 22.7, { octaves: 2 });
 
     // Rock: STEEP FACES ONLY, with noisy edges so the boundary never reads as a
     // contour line. An altitude term used to live here and it painted every
     // summit — which looked like snow, not Erangel.
-    let rock = smoothstep(0.26, 0.46, slope + rockNoise * 0.06);
+    let rock = smoothstep(0.30, 0.52, slope + rockNoise * 0.055 + outcrop * 0.075);
     rock = clamp(rock, 0, 1);
 
     // Cultivated-land mask: flat, low, not rock, not road.
