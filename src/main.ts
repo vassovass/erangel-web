@@ -12,6 +12,17 @@ import { FlyCamera } from './debug/flycam';
 import { findPose, applyPose, signalReadyAfter } from './debug/shots';
 import { BenchFly } from './debug/bench';
 import { WORLD_SEED } from './gen/noise';
+import { PhysicsWorld } from './player/physics';
+import { PlayerController } from './player/controller';
+import { Health } from './player/health';
+import { Footsteps } from './player/footsteps';
+import { Ballistics } from './weapons/ballistics';
+import { Weapon } from './weapons/weapon';
+import { CombatFX } from './weapons/fx';
+import { Viewmodel } from './weapons/viewmodel';
+import { AudioSystem } from './gen/audiogen';
+import { Hud } from './ui/hud';
+import { Match } from './match/match';
 
 const loadbar = document.getElementById('loadbar')!;
 const loadstep = document.getElementById('loadstep')!;
@@ -30,7 +41,8 @@ async function boot(): Promise<void> {
   await progress(5, 'renderer');
   const renderer = createRenderer(container);
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.1, quality.drawDistance);
+  const camera = new THREE.PerspectiveCamera(74, window.innerWidth / window.innerHeight, 0.08, quality.drawDistance);
+  scene.add(camera); // viewmodel rig renders as a camera child
   const engine = new Engine(renderer, scene, camera);
 
   await progress(15, 'baking materials');
@@ -59,6 +71,8 @@ async function boot(): Promise<void> {
   });
 
   await progress(95, 'systems');
+  const urlq = new URLSearchParams(location.search);
+
   if (params.mode === 'shot' && params.shot) {
     const pose = findPose(params.shot);
     if (!pose) throw new Error(`Unknown shot pose '${params.shot}'`);
@@ -66,11 +80,101 @@ async function boot(): Promise<void> {
     signalReadyAfter(40, renderer);
   } else if (params.mode === 'bench') {
     engine.add(new BenchFly(engine, hf));
-  } else {
+  } else if (urlq.has('fly')) {
     const input = new Input(renderer.domElement);
     camera.position.set(-20, hf.height(-20, 82) + 1.8, 82);
     camera.lookAt(120, hf.height(120, 100) + 3, 100);
     engine.add(new FlyCamera(camera, input));
+  } else {
+    // ---- Game mode: player + weapon + FX + audio + HUD ----
+    const input = new Input(renderer.domElement);
+    const physics = new PhysicsWorld(hf);
+    const audio = new AudioSystem();
+
+    const spawnX = 10, spawnZ = 95;
+    const spawn = new THREE.Vector3(spawnX, hf.height(spawnX, spawnZ), spawnZ);
+    const player = new PlayerController(camera, input, physics, spawn);
+    const health = new Health();
+    const ballistics = new Ballistics(physics);
+    const fx = new CombatFX(camera);
+    scene.add(fx.group);
+    const weapon = new Weapon(camera, input, player, ballistics);
+    const viewmodel = new Viewmodel(camera, factory, player, weapon);
+
+    // Feedback hook FIRST — Match wraps it with the damage router.
+    ballistics.onTargetHit = (bh) => {
+      const tag = bh.hit.tag.replace('head:', '');
+      if (tag.startsWith('bot:')) {
+        hudRef?.showHitmarker();
+        audio.play(bh.hit.tag.startsWith('head:') ? 'headshot' : 'hit', { volume: 0.5 });
+      }
+    };
+
+    const match = new Match(scene, hf, physics, ballistics, player, health, camera, audio);
+    const hud = new Hud(weapon, health, match, player);
+    let hudRef: Hud | null = hud;
+
+    match.onKillFeed = (e) => hud.addFeedLine(e.text);
+    match.onStateChange = (s) => {
+      if (s === 'won' || s === 'dead') hud.showEnd(s, match.kills, match.aliveCount);
+    };
+    health.onDamage = () => hud.showDamage();
+    health.onDeath = () => match.playerDied();
+    const _muzzle = new THREE.Vector3();
+
+    weapon.onShot = () => {
+      viewmodel.triggerKick();
+      viewmodel.muzzleWorld(_muzzle);
+      fx.muzzleFlash(_muzzle);
+      audio.play('shot', { volume: 0.9, detuneJitter: 0.04 });
+      for (const bot of match.bots) bot.hearShot(player.position);
+    };
+    weapon.onReloadStart = () => {
+      viewmodel.triggerReload();
+      audio.play('mag-out');
+      setTimeout(() => audio.play('mag-in'), 1400);
+      setTimeout(() => audio.play('bolt'), 2300);
+    };
+    weapon.onDryFire = () => audio.play('dry');
+    ballistics.onImpact = (hit) => {
+      fx.impact(hit);
+      audio.playAt('step-dirt', hit.point.x - camera.position.x, hit.point.y - camera.position.y, hit.point.z - camera.position.z, 10);
+    };
+    // Match installs the damage router on top of this feedback hook.
+    ballistics.onTargetHit = (bh) => {
+      const tag = bh.hit.tag.replace('head:', '');
+      if (tag.startsWith('bot:')) {
+        hud.showHitmarker();
+        audio.play(bh.hit.tag.startsWith('head:') ? 'headshot' : 'hit', { volume: 0.5 });
+      }
+    };
+    ballistics.onTrace = (from, to) => {
+      if (from.distanceToSquared(camera.position) > 25) fx.tracer(from, to);
+    };
+
+    engine.add(player);
+    engine.add(weapon);
+    engine.add({ fixedUpdate: (dt) => ballistics.fixedUpdate(dt) });
+    engine.add({ fixedUpdate: (dt) => match.fixedUpdate(dt), update: (dt) => match.update(dt) });
+    engine.add(viewmodel);
+    engine.add(fx);
+    engine.add(new Footsteps(player, hf, audio));
+    engine.add({
+      fixedUpdate: () => {
+        if (input.wasPressed('interact') && match.state === 'playing') {
+          const item = match.lootInReach();
+          if (item) {
+            match.loot.take(item);
+            if (item.type === 'ammo') weapon.reserve += 30;
+            else if (item.type === 'medkit') health.heal(75);
+            else health.heal(15);
+            audio.play('mag-in', { volume: 0.7 });
+          }
+        }
+      },
+    });
+    engine.add({ update: (dt) => hud.update(dt) });
+    engine.add({ update: () => input.endFrame() });
   }
 
   engine.start();

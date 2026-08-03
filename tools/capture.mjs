@@ -133,7 +133,25 @@ async function main() {
     const gpu = await verifyGpu(page);
     console.log(`GPU: ${gpu}`);
 
-    if (bench) {
+    if (flag('game')) {
+      // Smoke test: boot the full game mode, wait for the loader to finish,
+      // let the match run a few seconds, screenshot.
+      await page.goto(`${base}/`, { waitUntil: 'load', timeout: 60000 });
+      await page.waitForFunction(
+        () => document.getElementById('loading')?.classList.contains('done'),
+        { timeout: 120000 }
+      );
+      await new Promise((r) => setTimeout(r, 4000));
+      const state = await page.evaluate(() => ({
+        alive: document.getElementById('alive')?.textContent,
+        zone: document.getElementById('zonetimer')?.textContent,
+        ammo: document.getElementById('mag')?.textContent,
+      }));
+      console.log('game state:', JSON.stringify(state));
+      mkdirSync(dirname(resolve(out)), { recursive: true });
+      await page.screenshot({ path: resolve(out) });
+      console.log(`  -> ${resolve(out)}`);
+    } else if (bench) {
       const url = `${base}/?bench=1${tod ? `&tod=${tod}` : ''}`;
       console.log(`bench: ${url}`);
       await page.goto(url, { waitUntil: 'load', timeout: 60000 });

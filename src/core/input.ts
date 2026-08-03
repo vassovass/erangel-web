@@ -76,13 +76,21 @@ export class Input {
     return this.down.has(action);
   }
 
-  /** True only on the first frame the action went down (cleared by endFrame). */
+  /** Consume-on-read edge trigger: true once per physical key press. */
   wasPressed(action: string): boolean {
-    return this.pressed.has(action);
+    if (this.pressed.has(action)) {
+      this.pressed.delete(action);
+      return true;
+    }
+    return false;
   }
 
   wasMousePressed(button: number): boolean {
-    return this.mousePressed[button];
+    if (this.mousePressed[button]) {
+      this.mousePressed[button] = false;
+      return true;
+    }
+    return false;
   }
 
   /** Returns and clears accumulated mouse look deltas. */
