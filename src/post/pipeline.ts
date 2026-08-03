@@ -34,10 +34,12 @@ export class PostPipeline {
 
     const smaa = new SMAAEffect();
 
+    // HDR frame: the analytic sky's sun lobe exceeds 1.0 by design, so the
+    // threshold sits above it or the whole sun side of the sky blooms out.
     this.bloom = new BloomEffect({
-      intensity: 0.5,
-      luminanceThreshold: 0.83,
-      luminanceSmoothing: 0.25,
+      intensity: 0.3,
+      luminanceThreshold: 1.12,
+      luminanceSmoothing: 0.18,
       mipmapBlur: true,
     });
     this.vignette = new VignetteEffect({ darkness: 0.42, offset: 0.28 });

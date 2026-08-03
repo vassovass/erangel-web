@@ -26,6 +26,7 @@ import { Match } from './match/match';
 import { buildSettlements } from './world/buildings';
 import { Vegetation } from './world/vegetation';
 import { PostPipeline } from './post/pipeline';
+import { Minimap } from './ui/minimap';
 
 const loadbar = document.getElementById('loadbar')!;
 const loadstep = document.getElementById('loadstep')!;
@@ -208,6 +209,13 @@ async function boot(): Promise<void> {
       },
     });
     engine.add({ update: (dt) => hud.update(dt) });
+    const minimap = new Minimap(hf);
+    engine.add({
+      update: () => {
+        if (input.wasPressed('map')) minimap.toggleFull();
+        minimap.update(player, match.zone);
+      },
+    });
     engine.add({
       update: () => {
         const d = Math.hypot(player.position.x - match.zone.center.x, player.position.z - match.zone.center.z);
