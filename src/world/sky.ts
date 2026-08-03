@@ -97,26 +97,34 @@ const CLOUD_BODY = /* glsl */ `
 	// the way real cover does.
 	gHaze = 0.0;
 	if ( direction.y > 0.002 ) {
-		vec2 cuv = direction.xz / max( direction.y, 0.02 );
+		// Bounded projection. A true flat plane (xz / y) compresses without limit
+		// toward the horizon: the deck aliases into one flat white band that eats
+		// the whole lower sky. Adding a floor to the divisor keeps the
+		// convergence readable and caps the compression at about 5x.
+		vec2 cuv = direction.xz / ( direction.y * 0.9 + 0.22 );
 		float drift = time * 0.0035;
 
 		// Cumulus: domain-warped fbm thresholded by coverage, then eroded so the
-		// bases are ragged rather than one soft blob.
-		vec2 p = cuv * 0.5 + vec2( drift, drift * 0.4 );
+		// bases are ragged rather than one soft blob. The frequency has to be
+		// high enough to fit a dozen cells across the dome — at half this the
+		// deck reads as two grey smears and swallows the blue entirely.
+		vec2 p = cuv * 1.6 + vec2( drift, drift * 0.4 );
 		float w = cfbm( p * 0.5, 3 );
 		float cum = cfbm( p + vec2( w, w * 0.8 ) * 1.7, 5 );
-		float mask = smoothstep( uCloudCover, uCloudCover + 0.20, cum );
+		float mask = smoothstep( uCloudCover, uCloudCover + 0.16, cum );
 		mask *= 1.0 - smoothstep( 0.45, 0.95, cfbm( p * 3.1 + 9.0, 3 ) ) * 0.45;
 
 		// Cirrus: much flatter, only visible in the gaps between cumulus.
-		vec2 q = vec2( cuv.x * 0.16, cuv.y * 1.05 ) * 0.85 + drift * 0.6;
+		vec2 q = vec2( cuv.x * 0.20, cuv.y * 1.3 ) * 1.4 + drift * 0.6;
 		float cir = cfbm( q, 4 );
-		cir = smoothstep( 0.40, 0.74, abs( cir - 0.5 ) * 2.0 );
+		cir = smoothstep( 0.46, 0.78, abs( cir - 0.5 ) * 2.0 );
 		cir *= smoothstep( 0.54, 0.30, cum );
 
-		float horizonFade = smoothstep( 0.0, 0.20, direction.y );
+		// Clouds thin out toward the horizon. Wide, because that is also where
+		// the projection is least trustworthy.
+		float horizonFade = smoothstep( 0.03, 0.42, direction.y );
 		mask *= horizonFade;
-		cir *= horizonFade * 0.45;
+		cir *= horizonFade * 0.35;
 
 		float rim = pow( max( dot( direction, vSunDirection ), 0.0 ), 5.0 );
 		float thickness = smoothstep( uCloudCover + 0.02, uCloudCover + 0.30, cum );
@@ -133,7 +141,7 @@ const CLOUD_BODY = /* glsl */ `
 
 	// Haze band amount; applied post-tonemap so it lands on the same value as
 	// the scene fog (three applies fog after tone mapping too).
-	gHaze = smoothstep( 0.18, -0.04, direction.y ) * uHazeStrength;
+	gHaze = smoothstep( 0.11, -0.03, direction.y ) * uHazeStrength;
 
 	`;
 
@@ -194,15 +202,15 @@ export function createAtmosphere(timeOfDay: number): Atmosphere {
   const haze = hazeSrgbFor(timeOfDay);
 
   const dials: SkyDials = {
-    turbidity: 3.6,
-    rayleigh: 2.35,
-    mieCoefficient: 0.0042,
+    turbidity: 2.9,
+    rayleigh: 2.6,
+    mieCoefficient: 0.0040,
     mieDirectionalG: 0.80,
-    cloudCover: 0.50,
-    cloudDensity: 0.95,
-    cloudLum: 2.4,
+    cloudCover: 0.585,
+    cloudDensity: 0.92,
+    cloudLum: 2.5,
     haze,
-    hazeStrength: 0.85,
+    hazeStrength: 0.62,
     sunTint: new THREE.Vector3(1.0, 0.78, 0.52),
   };
   patchSky(sky, dials, sunDir, true);
@@ -263,5 +271,7 @@ export function createAtmosphere(timeOfDay: number): Atmosphere {
 export function createFog(timeOfDay = parseBootParams().timeOfDay): THREE.FogExp2 {
   const [r, g, b] = hazeSrgbFor(timeOfDay);
   const color = new THREE.Color().setRGB(r, g, b, THREE.SRGBColorSpace);
-  return new THREE.FogExp2(color, 0.00082);
+  // Tuned so the far shore keeps its colour while the horizon still reads as
+  // atmosphere; heavier than this and the whole island goes milky.
+  return new THREE.FogExp2(color, 0.00054);
 }

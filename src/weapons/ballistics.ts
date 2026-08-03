@@ -17,6 +17,16 @@ interface Bullet {
   travelled: number;
   ownerCapsuleId: number;
   baseDamage: number;
+  whizzed?: boolean;
+}
+
+function segmentPointDistSq(a: THREE.Vector3, b: THREE.Vector3, p: THREE.Vector3): number {
+  const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+  const len2 = abx * abx + aby * aby + abz * abz;
+  let t = len2 > 0 ? ((p.x - a.x) * abx + (p.y - a.y) * aby + (p.z - a.z) * abz) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const dx = p.x - (a.x + abx * t), dy = p.y - (a.y + aby * t), dz = p.z - (a.z + abz * t);
+  return dx * dx + dy * dy + dz * dz;
 }
 
 const GRAVITY = 9.81;
@@ -30,6 +40,11 @@ export class Ballistics {
   onTargetHit: ((hit: BulletHit) => void) | null = null;
   /** Tracer hook: (from, to) per advanced segment. */
   onTrace: ((from: THREE.Vector3, to: THREE.Vector3) => void) | null = null;
+  /** Near-miss hook: a hostile bullet passed close to the listener. */
+  onWhiz: ((at: THREE.Vector3) => void) | null = null;
+  /** Listener for whiz detection (player eye) + owning capsule to exclude. */
+  listenerPos: THREE.Vector3 | null = null;
+  listenerCapsuleId = -1;
 
   constructor(private world: PhysicsWorld) {}
 
@@ -57,6 +72,17 @@ export class Ballistics {
       }
       const next = b.pos.clone().addScaledVector(dir, step);
       this.onTrace?.(b.pos, next);
+      // Near-miss whiz: hostile bullet segment passing close to the listener.
+      if (
+        this.onWhiz &&
+        !b.whizzed &&
+        this.listenerPos &&
+        b.ownerCapsuleId !== this.listenerCapsuleId &&
+        segmentPointDistSq(b.pos, next, this.listenerPos) < 6.5
+      ) {
+        b.whizzed = true;
+        this.onWhiz(this.listenerPos.clone());
+      }
       b.pos.copy(next);
       b.travelled += step;
       if (b.travelled > MAX_RANGE || b.pos.y < -40) this.bullets.splice(i, 1);

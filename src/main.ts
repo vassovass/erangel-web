@@ -162,6 +162,8 @@ async function boot(): Promise<void> {
     ballistics.onTrace = (from, to) => {
       if (from.distanceToSquared(camera.position) > 25) fx.tracer(from, to);
     };
+    ballistics.listenerPos = camera.position;
+    ballistics.onWhiz = () => audio.play('whiz', { volume: 0.55, detuneJitter: 0.25 });
 
     engine.add(player);
     engine.add(weapon);
@@ -176,15 +178,24 @@ async function boot(): Promise<void> {
           const item = match.lootInReach();
           if (item) {
             match.loot.take(item);
-            if (item.type === 'ammo') weapon.reserve += 30;
-            else if (item.type === 'medkit') health.heal(75);
-            else health.heal(15);
-            audio.play('mag-in', { volume: 0.7 });
+            if (item.type === 'ammo') {
+              weapon.reserve += 30;
+              audio.play('pickup', { volume: 0.7 });
+            } else {
+              health.heal(item.type === 'medkit' ? 75 : 15);
+              audio.play('heal', { volume: 0.7 });
+            }
           }
         }
       },
     });
     engine.add({ update: (dt) => hud.update(dt) });
+    engine.add({
+      update: () => {
+        const d = Math.hypot(player.position.x - match.zone.center.x, player.position.z - match.zone.center.z);
+        audio.setZoneProximity(match.zone.radius - d);
+      },
+    });
     engine.add({ update: () => input.endFrame() });
 
     // Scripted-playtest hooks (tools/playtest.mjs). Read-only state plus two

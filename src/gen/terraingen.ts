@@ -122,13 +122,14 @@ export class Heightfield {
     let hills = 0;
     if (hillMask > 0.002) {
       const ridge = clamp(this.hills.ridged(nx * 3.4, nz * 3.4, { octaves: 5 }), 0, 1);
-      // Gamma on the ridge sharpens crests and flattens the saddles between
-      // them — the silhouette reads as ridgelines rather than lumps.
-      hills = Math.pow(ridge, 1.4) * 106 * hillMask;
-      // Secondary crest relief that only bites near the tops.
-      const crestMask = hillMask * smoothstep(0.42, 0.86, ridge);
+      // A light gamma on the ridge firms up the crests without turning them
+      // into alpine spires — Erangel's hills are rounded, with rock breaking
+      // out of the steep faces rather than a bare summit.
+      hills = Math.pow(ridge, 1.12) * 90 * hillMask;
+      // Secondary crest relief that only bites right at the tops.
+      const crestMask = hillMask * smoothstep(0.55, 0.95, ridge);
       if (crestMask > 0.01) {
-        hills += this.hills.ridged(nx * 8.6 + 4.1, nz * 8.6 - 2.7, { octaves: 3 }) * 14 * crestMask;
+        hills += this.hills.ridged(nx * 8.6 + 4.1, nz * 8.6 - 2.7, { octaves: 3 }) * 7 * crestMask;
       }
     }
 
@@ -202,10 +203,10 @@ export class Heightfield {
 
     const rockNoise = this.splatNoise.fbm(x / 70, z / 70, { octaves: 3 });
 
-    // Rock: steep faces and high ground only, with noisy edges so the boundary
-    // never reads as a contour line.
-    let rock = smoothstep(0.215, 0.40, slope + rockNoise * 0.055);
-    rock = Math.max(rock, smoothstep(48, 76, h + rockNoise * 12));
+    // Rock: STEEP FACES ONLY, with noisy edges so the boundary never reads as a
+    // contour line. An altitude term used to live here and it painted every
+    // summit — which looked like snow, not Erangel.
+    let rock = smoothstep(0.26, 0.46, slope + rockNoise * 0.06);
     rock = clamp(rock, 0, 1);
 
     // Cultivated-land mask: flat, low, not rock, not road.
@@ -222,7 +223,7 @@ export class Heightfield {
 
     // Dirt: scree under the rock line, field margins, ploughed cells, verges,
     // beach.
-    let dirt = smoothstep(0.125, 0.27, slope + rockNoise * 0.05) * 0.85;
+    let dirt = smoothstep(0.155, 0.32, slope + rockNoise * 0.05) * 0.8;
     dirt = Math.max(dirt, ploughed * 0.82);
     dirt = Math.max(dirt, par.margin * farmBase * 0.55);
     dirt = Math.max(dirt, smoothstep(ROAD_FALLOFF, ROAD_HALF, rd) * 0.6);

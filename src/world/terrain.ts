@@ -22,7 +22,7 @@ const CHUNKS = 4;
 const CHUNK_QUADS = 128;
 const SPLAT_SIZE = 1024;
 
-const DETAIL_TILE = 3.6;   // metres per texture repeat, close-up
+const DETAIL_TILE = 3.0;   // metres per texture repeat, close-up
 
 export class Terrain {
   readonly group = new THREE.Group();
@@ -225,14 +225,18 @@ float tfbm(vec2 p) {
 // Two fetches: one pushed around by a slow offset field, one rotated 34 degrees
 // and rescaled, cross-faded by an independent low-frequency mask. Both UV
 // fields stay smooth so mip derivatives remain valid.
+// The offset field has to vary at a few TILES, not a few hundred metres: a slow
+// offset just slides one unbroken tiling around and changes nothing.
 vec2 stochOff(vec2 uv, float rnd) {
-  return vec2(tvn(uv * 0.021 + rnd), tvn(uv * 0.021 + rnd + 5.3)) * 6.0;
+  return vec2(tvn(uv * 0.085 + rnd), tvn(uv * 0.085 + rnd + 5.3)) * 2.6;
 }
 float stochMix(vec2 uv, float rnd) {
-  return smoothstep(0.36, 0.64, tvn(uv * 0.0131 + rnd * 2.0));
+  return smoothstep(0.34, 0.66, tvn(uv * 0.045 + rnd * 2.0));
 }
 vec2 stochUvB(vec2 uv, vec2 o) {
-  return vec2(uv.x * 0.83 - uv.y * 0.56, uv.x * 0.56 + uv.y * 0.83) * 1.17 + o.yx * 2.1 + 17.3;
+  // Rotate 34 degrees AND drop the scale well away from 1.0, so the two
+  // lattices beat against each other over a long period.
+  return vec2(uv.x * 0.83 - uv.y * 0.56, uv.x * 0.56 + uv.y * 0.83) * 0.61 + o.yx * 2.1 + 17.3;
 }
 vec3 stochCol(sampler2D tex, vec2 uv, float rnd) {
   vec2 o = stochOff(uv, rnd);
@@ -271,8 +275,8 @@ vec3 parcelTint(float t) {
 
   // Ragged road edge + slow width variation: two noise scales perturbing the
   // threshold on the tent profile, so the verge crumbles instead of ruling a line.
-  float ragged = (tfbm(vWPos.xz * 0.55) - 0.5) * 0.17 + (tvn(vWPos.xz * 0.085) - 0.5) * 0.11;
-  float edgeT = 0.560 + (tvn(vWPos.xz * 0.016) - 0.5) * 0.11;
+  float ragged = (tfbm(vWPos.xz * 0.55) - 0.5) * 0.14 + (tvn(vWPos.xz * 0.085) - 0.5) * 0.09;
+  float edgeT = 0.655 + (tvn(vWPos.xz * 0.016) - 0.5) * 0.10;
   gRoadW = smoothstep(edgeT - 0.05, edgeT + 0.08, gRoadT + ragged);
 
   vec2 duv = vWPos.xz / ${DETAIL_TILE.toFixed(2)};
@@ -297,18 +301,24 @@ vec3 parcelTint(float t) {
   // Macro breakup: large luminance swings plus a slow warm/cool hue drift.
   // This is what stops a 3.6m texture reading as wallpaper at 200m.
   float macro = tfbm(vWPos.xz * 0.0115);
+  float macroMid = tfbm(vWPos.xz * 0.045);
   float macroB = tvn(vWPos.xz * 0.0031);
-  col *= 0.80 + 0.44 * macro;
-  col *= mix(vec3(1.05, 1.01, 0.93), vec3(0.93, 0.97, 1.04), macroB);
+  col *= 0.74 + 0.52 * macro;
+  col *= 0.88 + 0.24 * macroMid;
+  col *= mix(vec3(1.07, 1.01, 0.90), vec3(0.92, 0.97, 1.05), macroB);
 
   // Worn rural road on top: twin wheel tracks read off the tent ramp.
   if (gRoadW > 0.003) {
-    vec3 rc = stochCol(uRoadMap, vWPos.xz / 3.1, 2.3);
-    float track = smoothstep(0.075, 0.0, abs(gRoadT - 0.815));
-    rc *= 1.0 - track * 0.34;
+    vec3 rc = stochCol(uRoadMap, vWPos.xz / 2.6, 2.3);
+    // Twin wheel tracks: the tent ramp doubles as a lateral coordinate, so
+    // |offset from centre| ~ 1.6m falls out of it for free, both sides at once.
+    float track = smoothstep(0.055, 0.0, abs(gRoadT - 0.822));
+    rc *= 1.0 - track * 0.42;
+    // Polished centre crown between the tracks.
+    rc *= 1.0 + smoothstep(0.045, 0.0, abs(gRoadT - 0.955)) * 0.16;
     rc *= 0.90 + 0.20 * tvn(vWPos.xz * 0.05);
     // Dust dragged in from the verge along the outer third.
-    rc = mix(rc, rc * vec3(1.28, 1.18, 0.98), smoothstep(0.72, 0.58, gRoadT));
+    rc = mix(rc, rc * vec3(1.34, 1.20, 0.96), smoothstep(0.80, 0.66, gRoadT));
     col = mix(col, rc, gRoadW);
   }
   diffuseColor.rgb *= col;

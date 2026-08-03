@@ -80,6 +80,54 @@ export class AudioSystem {
     this.buffers.set('headshot', this.render(0.14, (t) => {
       return Math.sin(2 * Math.PI * 1600 * t) * Math.exp(-t * 70) * 0.7 + Math.sin(2 * Math.PI * 2400 * t) * Math.exp(-t * 100) * 0.4;
     }, 0.45));
+
+    // Bullet whiz: fast noise sweep with a falling pitch feel.
+    this.buffers.set('whiz', this.render(0.22, (t, rnd) => {
+      const env = Math.sin(Math.min(t / 0.22, 1) * Math.PI);
+      const tone = Math.sin(2 * Math.PI * (2600 - t * 5200) * t) * 0.3;
+      return ((rnd() * 2 - 1) * 0.7 + tone) * env * Math.exp(-t * 4);
+    }, 0.5));
+
+    this.buffers.set('pickup', this.render(0.16, (t) => {
+      return (Math.sin(2 * Math.PI * 620 * t) + Math.sin(2 * Math.PI * 930 * t) * 0.6) * Math.exp(-t * 24);
+    }, 0.4));
+
+    this.buffers.set('heal', this.render(0.5, (t) => {
+      const a = Math.sin(2 * Math.PI * 520 * t) * Math.exp(-t * 6);
+      const b = t > 0.12 ? Math.sin(2 * Math.PI * 660 * (t - 0.12)) * Math.exp(-(t - 0.12) * 6) : 0;
+      const c = t > 0.24 ? Math.sin(2 * Math.PI * 780 * (t - 0.24)) * Math.exp(-(t - 0.24) * 6) : 0;
+      return (a + b * 0.8 + c * 0.7) * 0.5;
+    }, 0.35));
+  }
+
+  private zoneGain: GainNode | null = null;
+
+  /** Rising drone as the player nears / crosses the blue zone wall. */
+  setZoneProximity(metersInside: number): void {
+    if (this.ctx.state !== 'running') return;
+    if (!this.zoneGain) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.render(2.0, (t, rnd) => {
+        return (
+          Math.sin(2 * Math.PI * 52 * t) * 0.5 +
+          Math.sin(2 * Math.PI * 78.2 * t) * 0.3 +
+          (rnd() * 2 - 1) * 0.12
+        );
+      }, 0.8);
+      src.loop = true;
+      const filt = this.ctx.createBiquadFilter();
+      filt.type = 'lowpass';
+      filt.frequency.value = 240;
+      this.zoneGain = this.ctx.createGain();
+      this.zoneGain.gain.value = 0;
+      src.connect(filt);
+      filt.connect(this.zoneGain);
+      this.zoneGain.connect(this.master);
+      src.start();
+    }
+    // Silent >120m inside, swells approaching the wall, loud outside.
+    const target = metersInside < 0 ? 0.34 : metersInside > 120 ? 0 : 0.22 * (1 - metersInside / 120);
+    this.zoneGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.4);
   }
 
   private render(seconds: number, fn: (t: number, rnd: () => number) => number, gain: number): AudioBuffer {
