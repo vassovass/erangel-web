@@ -110,13 +110,13 @@ export class CombatFX implements System {
     t.life = 0.07;
   }
 
-  muzzleFlash(worldPos: THREE.Vector3): void {
+  muzzleFlash(worldPos: THREE.Vector3, life = 0.045): void {
     this.muzzleSprite.position.copy(worldPos);
     this.muzzleSprite.material.rotation = (worldPos.x * 7919 + worldPos.z * 104729) % 6.28;
     this.muzzleSprite.visible = true;
     this.muzzleLight.position.copy(worldPos);
     this.muzzleLight.intensity = 14;
-    this.muzzleLife = 0.045;
+    this.muzzleLife = life;
   }
 
   impact(hit: RayHit): void {

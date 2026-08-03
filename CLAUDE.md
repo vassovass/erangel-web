@@ -38,6 +38,19 @@ draw calls at 1080p. three r185 / WebGL2 / TypeScript / Vite.**
 - All world-gen must stay deterministic in WORLD_SEED (no Math.random in gen paths; use mulberry32/hash2).
 - Keep new meshes within draw-call budget: merge static geometry per material, InstancedMesh for repeats. Check `calls:` printed by capture.
 
+## Parallel lanes (IMPORTANT)
+
+Multiple visual streams edit disjoint files in ONE shared working tree at the
+same time. Consequences for every executor:
+- If `tsc` reports errors ONLY in files outside your ownership list, another
+  lane is mid-cycle: ignore those errors and proceed. Your gate is: your OWN
+  files typecheck-clean and `npx vite build --outDir dist-<your-item>` succeeds.
+- If `vite build` fails on another lane's file, wait ~2 minutes and retry once
+  or twice — their executor is mid-edit and coherent states return quickly.
+- NEVER "fix" a file you do not own, even to unblock a build.
+- Do not run plain `vite build` (it clobbers other lanes' preview); always use
+  your own --outDir.
+
 ## Review loop (visual items)
 
 Executor builds → `vite build` → capture poses → 3-critic panel reads PNGs vs

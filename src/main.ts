@@ -109,6 +109,54 @@ async function boot(): Promise<void> {
       signalReadyAfter(30, renderer);
       return true;
     };
+
+    // Combat-visual streams: weapon poses carry the viewmodel; bots-mid poses a squad.
+    if (params.shot.startsWith('weapon-')) {
+      const fakeEuler = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+      const fakePlayer = {
+        ads: params.shot === 'weapon-ads',
+        speed2D: 0,
+        isSprinting: false,
+        yaw: fakeEuler.y,
+        pitch: fakeEuler.x,
+      } as unknown as import('./player/controller').PlayerController;
+      const vm = new Viewmodel(camera, factory, fakePlayer, null as unknown as Weapon);
+      engine.add(vm);
+      if (params.shot === 'weapon-hip') {
+        const fx = new CombatFX(camera);
+        scene.add(fx.group);
+        engine.add(fx);
+        const muzzle = new THREE.Vector3();
+        let frames = 0;
+        engine.add({
+          update: () => {
+            frames++;
+            if (frames === 30) {
+              vm.muzzleWorld(muzzle);
+              fx.muzzleFlash(muzzle, 2.5);
+              const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+              fx.tracer(muzzle.clone().addScaledVector(dir, 2), muzzle.clone().addScaledVector(dir, 26));
+            }
+          },
+        });
+      }
+    }
+    if (params.shot === 'bots-mid') {
+      const { buildCharacter, poseCharacter } = await import('./gen/charactergen');
+      const spots: [number, number, number, number, number][] = [
+        [52, 138, 0.4, 0.9, 0],    // running
+        [64, 148, -0.6, 0, 0],     // standing aim
+        [74, 142, 1.2, 0.5, 1],    // crouched
+        [58, 156, 2.2, 0.7, 0],    // running away
+      ];
+      spots.forEach(([x, z, yaw, speed, crouch], i) => {
+        const rig = buildCharacter(4000 + i * 31);
+        rig.root.position.set(x, hf.height(x, z), z);
+        rig.root.rotation.y = yaw;
+        poseCharacter(rig, { walkPhase: i * 1.7, speed01: speed, aimPitch: 0, crouch, dead: 0 });
+        scene.add(rig.root);
+      });
+    }
   } else if (params.mode === 'bench') {
     engine.add(new BenchFly(engine, hf));
   } else if (urlq.has('fly')) {
@@ -120,6 +168,24 @@ async function boot(): Promise<void> {
     // ---- Game mode: player + weapon + FX + audio + HUD ----
     const input = new Input(renderer.domElement);
     const audio = new AudioSystem();
+
+    // Deploy gate: first click locks the pointer and drops you in.
+    const deploy = document.createElement('div');
+    deploy.style.cssText =
+      'position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;' +
+      'justify-content:center;gap:10px;background:rgba(5,7,9,0.55);color:#e8eef2;' +
+      "font-family:'Segoe UI',system-ui,sans-serif;pointer-events:none;transition:opacity 0.4s;";
+    deploy.innerHTML =
+      '<div style="font-size:40px;letter-spacing:12px;font-weight:200">ERANGEL</div>' +
+      '<div style="font-size:13px;letter-spacing:3px;color:#d9a12b">CLICK TO DEPLOY</div>' +
+      '<div style="font-size:11px;letter-spacing:1px;color:#93a3ad">WASD move &nbsp; SHIFT sprint &nbsp; RMB aim &nbsp; R reload &nbsp; F pick up &nbsp; C crouch &nbsp; M map</div>';
+    document.body.appendChild(deploy);
+    document.addEventListener(
+      'pointerlockchange',
+      () => {
+        deploy.style.opacity = document.pointerLockElement ? '0' : '1';
+      }
+    );
 
     const spawnX = 10, spawnZ = 95;
     const spawn = new THREE.Vector3(spawnX, hf.height(spawnX, spawnZ), spawnZ);
@@ -146,7 +212,14 @@ async function boot(): Promise<void> {
 
     match.onKillFeed = (e) => hud.addFeedLine(e.text);
     match.onStateChange = (s) => {
-      if (s === 'won' || s === 'dead') hud.showEnd(s, match.kills, match.aliveCount);
+      if (s === 'won' || s === 'dead') {
+        hud.showEnd(s, match.kills, match.aliveCount);
+        document.exitPointerLock();
+        // R redeploys once the match is over.
+        window.addEventListener('keydown', (e) => {
+          if (e.code === 'KeyR') location.reload();
+        });
+      }
     };
     health.onDamage = () => hud.showDamage();
     health.onDeath = () => match.playerDied();
