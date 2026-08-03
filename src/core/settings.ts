@@ -25,7 +25,7 @@ export const quality: Quality = {
   grassRadius: 55,
   grassDensity: 1.0,
   treeDetailRadius: 120,
-  drawDistance: 1400,
+  drawDistance: 1600,   // far enough that fog, not the far plane, ends the sea
   anisotropy: 8,
 };
 

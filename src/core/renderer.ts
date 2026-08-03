@@ -11,7 +11,9 @@ export function createRenderer(container: HTMLElement): THREE.WebGLRenderer {
   });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.0;
+  // Late-afternoon PUBG glow: the contrast comes from low ambient (see sky.ts),
+  // not from pushing exposure, so this only nudges the highlights up.
+  renderer.toneMappingExposure = 1.06;
   renderer.shadowMap.enabled = true;
   // r183+: PCFShadowMap is the soft PCF filter (PCFSoftShadowMap is deprecated).
   renderer.shadowMap.type = THREE.PCFShadowMap;

@@ -175,6 +175,38 @@ async function boot(): Promise<void> {
     });
     engine.add({ update: (dt) => hud.update(dt) });
     engine.add({ update: () => input.endFrame() });
+
+    // Scripted-playtest hooks (tools/playtest.mjs). Read-only state plus two
+    // levers the harness needs; harmless if untouched in normal play.
+    (window as unknown as Record<string, unknown>).__TEST__ = {
+      state: () => ({
+        playerPos: player.position.toArray(),
+        playerHp: health.hp,
+        playerDead: health.dead,
+        ammo: weapon.ammo,
+        reserve: weapon.reserve,
+        kills: match.kills,
+        alive: match.aliveCount,
+        botsAlive: match.bots.filter((b) => b.alive).length,
+        zoneRadius: match.zone.radius,
+        zonePhase: match.zone.phaseIndex,
+        matchState: match.state,
+        lootNearby: match.lootInReach()?.type ?? null,
+      }),
+      damageBot: (i: number, amt: number) => {
+        const b = match.bots[i];
+        if (b && b.alive) {
+          b.damage(amt);
+          if (!b.alive) match.kills++;
+        }
+      },
+      ffwdZone: (seconds: number) => {
+        for (let s = 0; s < seconds * 2; s++) match.zone.update(0.5);
+      },
+      teleport: (x: number, z: number) => {
+        player.position.set(x, hf.height(x, z), z);
+      },
+    };
   }
 
   engine.start();

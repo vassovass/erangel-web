@@ -121,6 +121,9 @@ export class Match {
   fixedUpdate(dt: number): void {
     if (this.state !== 'playing') return;
 
+    // Win detection must not depend on which code path killed the last bot.
+    this.checkWin();
+
     this.zone.update(dt);
     this.wall.set(this.zone.center, this.zone.radius);
 

@@ -154,6 +154,31 @@ export function voronoi2(x: number, y: number, seed = 0): { f1: number; id: numb
   return { f1: Math.sqrt(f1), id };
 }
 
+/**
+ * Voronoi returning F1, F2 and the winning cell id. `f2 - f1` is the classic
+ * cell-boundary distance — used to draw field margins between farm parcels.
+ */
+export function voronoiCell(x: number, y: number, seed = 0): { f1: number; f2: number; id: number } {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  let f1 = 8, f2 = 8, id = 0;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const cx = xi + dx, cy = yi + dy;
+      const jx = cx + hash2(cx, cy, seed);
+      const jy = cy + hash2(cx, cy, seed + 1);
+      const d = (x - jx) * (x - jx) + (y - jy) * (y - jy);
+      if (d < f1) {
+        f2 = f1;
+        f1 = d;
+        id = (Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663) ^ seed) | 0;
+      } else if (d < f2) {
+        f2 = d;
+      }
+    }
+  }
+  return { f1: Math.sqrt(f1), f2: Math.sqrt(f2), id };
+}
+
 export function clamp(v: number, a: number, b: number): number {
   return v < a ? a : v > b ? b : v;
 }
