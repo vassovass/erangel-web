@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ERANGEL // web</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0a0d10; }
+    #app { position: fixed; inset: 0; }
+    #app canvas { display: block; width: 100%; height: 100%; }
+    #loading {
+      position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 14px;
+      background: radial-gradient(ellipse at center, #10161c 0%, #05070a 100%);
+      color: #cfd8dc; font-family: 'Segoe UI', system-ui, sans-serif;
+      transition: opacity 0.6s ease; user-select: none;
+    }
+    #loading.done { opacity: 0; pointer-events: none; }
+    #loading .title { font-size: 28px; letter-spacing: 10px; font-weight: 200; color: #e8eef2; }
+    #loading .sub { font-size: 11px; letter-spacing: 4px; color: #6f8290; text-transform: uppercase; }
+    #loading .bar { width: 320px; height: 2px; background: #1c262e; }
+    #loading .bar > div { height: 100%; width: 0%; background: #d99a2b; transition: width 0.2s ease; }
+    #loading .step { font-size: 11px; color: #55676f; letter-spacing: 1px; min-height: 14px; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="loading">
+    <div class="title">ERANGEL</div>
+    <div class="sub">procedural battlegrounds</div>
+    <div class="bar"><div id="loadbar"></div></div>
+    <div class="step" id="loadstep">booting</div>
+  </div>
+  <div id="hud"></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

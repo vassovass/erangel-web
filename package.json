@@ -1,0 +1,25 @@
+{
+  "name": "erangel-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "shots": "node tools/capture.mjs",
+    "gate": "node tools/gate.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
+    "postprocessing": "^6.39.4",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.3",
+    "puppeteer-core": "^25.4.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.0"
+  }
+}
