@@ -3,4 +3,7 @@ dist/
 dist-*/
 review/shots/
 review/bench/
+review/reference/
+review/blind/
+review/verdicts/
 *.log
