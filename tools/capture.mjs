@@ -144,6 +144,21 @@ async function main() {
         () => document.getElementById('loading')?.classList.contains('done'),
         { timeout: 120000 }
       );
+      // --click drops through the pre-game "CLICK TO DEPLOY" gate so a review
+      // capture frames the HUD, not the deploy card. The click is the real
+      // thing (it requests pointer lock); the fallback only covers headless
+      // builds where pointer lock is refused.
+      if (flag('click')) {
+        await page.mouse.click(960, 540);
+        await new Promise((r) => setTimeout(r, 400));
+        await page.evaluate(() => {
+          for (const el of Array.from(document.body.children)) {
+            if (el instanceof HTMLElement && /CLICK TO DEPLOY/i.test(el.textContent || '')) {
+              el.style.opacity = '0';
+            }
+          }
+        });
+      }
       await new Promise((r) => setTimeout(r, 4000));
       const state = await page.evaluate(() => ({
         alive: document.getElementById('alive')?.textContent,
@@ -151,9 +166,68 @@ async function main() {
         ammo: document.getElementById('mag')?.textContent,
       }));
       console.log('game state:', JSON.stringify(state));
-      mkdirSync(dirname(resolve(out)), { recursive: true });
-      await page.screenshot({ path: resolve(out) });
-      console.log(`  -> ${resolve(out)}`);
+
+      // Draw calls in game mode: __INFO__ only exists in shot mode, but the
+      // atmosphere bake parks the renderer on window.__RS__ in every mode.
+      // Post-processing resets renderer.info on every internal render, so a
+      // plain read after the frame reports the last fullscreen pass (1 call).
+      // Freeze autoReset and average over 20 frames for the real per-frame cost
+      // INCLUDING the post passes.
+      const readInfo = () =>
+        page.evaluate(
+          () =>
+            new Promise((res) => {
+              const r = window.__RS__?.renderer;
+              if (!r) return res(null);
+              const prev = r.info.autoReset;
+              r.info.autoReset = false;
+              r.info.reset();
+              let f = 0;
+              const tick = () => {
+                f++;
+                if (f >= 20) {
+                  const out = {
+                    calls: Math.round(r.info.render.calls / f),
+                    triangles: Math.round(r.info.render.triangles / f),
+                  };
+                  r.info.autoReset = prev;
+                  res(out);
+                } else requestAnimationFrame(tick);
+              };
+              requestAnimationFrame(tick);
+            })
+        );
+      const pressKeys = async (spec) => {
+        for (const k of String(spec).split('+').filter(Boolean)) await page.keyboard.press(k);
+      };
+
+      // --steps name[:key[+key]][@waitMs],...  captures several HUD states from
+      // ONE boot (world-gen costs ~2 min, so re-booting per state is wasteful).
+      // With --steps, --out is a DIRECTORY. Without it the original
+      // single-file behaviour is unchanged.
+      const steps = opt('steps');
+      const extraWait = Number(opt('wait', '0')) || 0;
+      const pressKey = opt('press-key');
+      if (steps) {
+        mkdirSync(resolve(out), { recursive: true });
+        for (const raw of steps.split(',').filter(Boolean)) {
+          const [head, waitStr] = raw.split('@');
+          const [name, keys] = head.split(':');
+          if (keys) await pressKeys(keys);
+          await new Promise((r) => setTimeout(r, Number(waitStr) || 800));
+          const file = resolve(out, `${name}.png`);
+          await page.screenshot({ path: file });
+          const info = await readInfo();
+          console.log(`  -> ${file}${info ? ` (calls: ${info.calls}, tris: ${info.triangles})` : ''}`);
+        }
+      } else {
+        if (pressKey) await pressKeys(pressKey.replace(/,/g, '+'));
+        if (extraWait) await new Promise((r) => setTimeout(r, extraWait));
+        mkdirSync(dirname(resolve(out)), { recursive: true });
+        await page.screenshot({ path: resolve(out) });
+        const info = await readInfo();
+        console.log(`  -> ${resolve(out)}${info ? ` (calls: ${info.calls}, tris: ${info.triangles})` : ''}`);
+      }
     } else if (bench) {
       const url = `${base}/?bench=1${tod ? `&tod=${tod}` : ''}`;
       console.log(`bench: ${url}`);

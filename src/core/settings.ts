@@ -4,9 +4,9 @@
 export interface Quality {
   renderScale: number;        // canvas pixel ratio multiplier (dynamic-res lever)
   msaa: boolean;              // hardware AA until the post pipeline's SMAA replaces it
-  shadowMapSize: number;      // per-cascade shadow map resolution
-  shadowCascades: number;     // CSM cascade count (2 on integrated)
-  shadowDistance: number;     // how far shadows reach (m)
+  shadowMapSize: number;      // sun shadow map resolution (read by sky.ts)
+  shadowCascades: number;     // 1 = single camera-fitted cascade (see fitSunShadow)
+  shadowDistance: number;     // cap on the fitted shadow range (m), read by sky.ts
   textureSize: number;        // baked PBR texture resolution
   grassRadius: number;        // grass draw radius (m)
   grassDensity: number;       // 0..1 multiplier on instance counts
@@ -18,15 +18,24 @@ export interface Quality {
 export const quality: Quality = {
   renderScale: 1.0,
   msaa: false, // SMAA in the post pipeline replaces hardware MSAA
-  shadowMapSize: 1024,
-  shadowCascades: 2,
-  shadowDistance: 140,
+  // One 2048 map whose ortho box is refitted to the camera frustum each frame
+  // (sky.ts fitSunShadow). It carries PROPS ONLY — landform self-shadowing is
+  // baked on the CPU into the terrain control map — so the range collapses from
+  // 700m to 300m and the same 2048 texels buy ~0.15 m/texel contact shadows
+  // instead of ~0.9. A second cascade would cost a whole extra depth pass,
+  // which the 29.5fps bare-terrain baseline cannot pay for.
+  shadowMapSize: 2048,
+  shadowCascades: 1,
+  shadowDistance: 300,
   textureSize: 1024,
   grassRadius: 55,
   grassDensity: 1.0,
   treeDetailRadius: 120,
   drawDistance: 1600,   // far enough that fog, not the far plane, ends the sea
-  anisotropy: 8,
+  // 8:1 is well short of what a 74-degree fov needs on ground past ~15m; the
+  // near-field detail band was being mip-blurred into mush before it reached
+  // the screen.
+  anisotropy: 16,
 };
 
 export interface BootParams {

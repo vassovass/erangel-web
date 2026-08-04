@@ -327,6 +327,36 @@ async function boot(): Promise<void> {
       teleport: (x: number, z: number) => {
         player.position.set(x, hf.height(x, z), z);
       },
+      // Stage a firefight for review captures: drop the player at `dist` metres
+      // from a living bot, aiming at its chest. The bot's own AI does the rest.
+      encounter: (dist = 16, botIndex = -1) => {
+        deploy.style.display = 'none';
+        const candidates =
+          botIndex >= 0 ? [match.bots[botIndex]] : match.bots.filter((b) => b.alive);
+        for (const bot of candidates) {
+          if (!bot || !bot.alive) continue;
+          for (let a = 0; a < 12; a++) {
+            const ang = (a / 12) * Math.PI * 2;
+            const px = bot.pos.x + Math.sin(ang) * dist;
+            const pz = bot.pos.z + Math.cos(ang) * dist;
+            if (!hf.walkable(px, pz)) continue;
+            // Clear line of sight from eye to bot chest, or try the next angle.
+            const eye = new THREE.Vector3(px, hf.height(px, pz) + 1.68, pz);
+            const chest = new THREE.Vector3(bot.pos.x, bot.pos.y + 1.25, bot.pos.z);
+            const dir = chest.clone().sub(eye);
+            const range = dir.length();
+            const hit = physics.raycast(eye, dir.normalize(), range - 0.8);
+            if (hit && hit.kind === 'terrain') continue;
+            player.position.set(px, hf.height(px, pz), pz);
+            const dx = bot.pos.x - px;
+            const dz = bot.pos.z - pz;
+            player.yaw = Math.atan2(-dx, -dz);
+            player.pitch = Math.atan2(chest.y - eye.y, Math.hypot(dx, dz));
+            return true;
+          }
+        }
+        return false;
+      },
     };
   }
 

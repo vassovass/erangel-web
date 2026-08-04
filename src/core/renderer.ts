@@ -11,9 +11,13 @@ export function createRenderer(container: HTMLElement): THREE.WebGLRenderer {
   });
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  // Late-afternoon PUBG glow: the contrast comes from low ambient (see sky.ts),
-  // not from pushing exposure, so this only nudges the highlights up.
-  renderer.toneMappingExposure = 1.06;
+  // NOTE: three disables tone mapping whenever the render target is not the
+  // canvas, so with the post pipeline active (the default, and what capture
+  // uses) this curve does NOT run — the frame is composed linear and the scene
+  // is authored for that (see the colour-space note in sky.ts). This exposure
+  // only applies on ?nopost, and 0.6 cancels the ACES `exposure / 0.6` term so
+  // the two paths land on roughly the same mid-tones.
+  renderer.toneMappingExposure = 0.6;
   renderer.shadowMap.enabled = true;
   // r183+: PCFShadowMap is the soft PCF filter (PCFSoftShadowMap is deprecated).
   renderer.shadowMap.type = THREE.PCFShadowMap;

@@ -1,124 +1,223 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hash2 } from './noise';
 
-// Procedural tree assets: canvas-drawn foliage cluster + grass clump alpha
-// textures, and per-species trunk/card geometry. Everything instanced by
-// vegetation.ts — this file only makes the shared building blocks.
+// Bark maps and dead-tree geometry. Everything else that used to live here —
+// the grass atlas, the crown-sized foliage cards and the old trunk/card layouts
+// — moved to veg-atlas.ts / veg-blades.ts / veg-trees.ts when vegetation went
+// from "one billboard per clump" to real geometry plus leaf-cluster crowns.
 
-export function makeFoliageTexture(species: 'broadleaf' | 'pine', seed: number): THREE.CanvasTexture {
+/** Counter-based deterministic stream (no Math.random anywhere in gen paths). */
+function stream(seed: number): () => number {
+  let i = 1;
+  return () => hash2(seed, i++);
+}
+
+function rgb(r: number, g: number, b: number, a = 1): string {
+  return `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${a})`;
+}
+
+function newCanvas(w: number, h: number): { c: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   const c = document.createElement('canvas');
-  c.width = c.height = 256;
+  c.width = w;
+  c.height = h;
   const ctx = c.getContext('2d')!;
-  ctx.clearRect(0, 0, 256, 256);
+  ctx.clearRect(0, 0, w, h);
+  return { c, ctx };
+}
 
-  if (species === 'broadleaf') {
-    // Clumped leaf mass: hundreds of small overlapping ellipses, denser centre.
-    for (let i = 0; i < 900; i++) {
-      const a = hash2(seed, i) * Math.PI * 2;
-      const r = Math.pow(hash2(seed + 1, i), 0.6) * 108;
-      const x = 128 + Math.cos(a) * r * 1.15;
-      const y = 118 + Math.sin(a) * r * 0.85;
-      const size = 3 + hash2(seed + 2, i) * 6;
-      const g = 0.32 + hash2(seed + 3, i) * 0.3;
-      const light = 1 - r / 130;
-      ctx.fillStyle = `rgba(${Math.floor(58 + light * 55)}, ${Math.floor((g + light * 0.22) * 190)}, ${Math.floor(38 + light * 30)}, ${0.75 + hash2(seed + 4, i) * 0.25})`;
+// ---------------------------------------------------------------------------
+// Bark: albedo + CPU-sobel normal map
+// ---------------------------------------------------------------------------
+
+export type BarkKind = 'oak' | 'birch' | 'pine' | 'dead';
+
+export interface BarkMaps {
+  map: THREE.CanvasTexture;
+  normalMap: THREE.DataTexture;
+}
+
+const BARK_W = 128;
+const BARK_H = 256;
+
+// Cycle 3 desaturation. Cycle 2's pine base ran [116,76,48] — saturation 59%
+// with a hard red push — and once the instance tint multiplied through it the
+// trunks sampled at #401808 / #602810 (S 83-88%). That is fantasy redwood. A
+// Scots pine or an oak in rural Eastern Europe sits at S 10-25% grey-brown and
+// the PUBG reference trunk measures S 4%; these bases land the RENDERED trunk
+// near hsv(30, 0.26, 0.33) once the near-neutral instance tint is applied.
+// Cycle 4: birch came down from [198,194,186]. Multiplied by an instance tint of
+// 0xe2dfd8 that was a near-paper-white 0.87, the rendered trunk was the
+// BRIGHTEST object in the treeline frame — brighter than the sky — where the
+// reference's birches read sRGB ~150-190 lit with heavy dark lenticel banding.
+const BARK_BASE: Record<BarkKind, [number, number, number]> = {
+  oak: [120, 110, 100],
+  birch: [168, 162, 150],
+  pine: [122, 112, 100],
+  dead: [124, 116, 104],
+};
+
+function normalFromCanvas(ctx: CanvasRenderingContext2D, w: number, h: number, strength: number): THREE.DataTexture {
+  const src = ctx.getImageData(0, 0, w, h).data;
+  const lum = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    lum[i] = (src[i * 4] * 0.299 + src[i * 4 + 1] * 0.587 + src[i * 4 + 2] * 0.114) / 255;
+  }
+  const at = (x: number, y: number) => lum[((y + h) % h) * w + ((x + w) % w)];
+  const data = new Uint8Array(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = (at(x - 1, y) - at(x + 1, y)) * strength;
+      const dy = (at(x, y - 1) - at(x, y + 1)) * strength;
+      const len = Math.hypot(dx, dy, 1);
+      const o = (y * w + x) * 4;
+      data[o] = ((dx / len) * 0.5 + 0.5) * 255;
+      data[o + 1] = ((dy / len) * 0.5 + 0.5) * 255;
+      data[o + 2] = (1 / len) * 0.5 * 255 + 127;
+      data[o + 3] = 255;
+    }
+  }
+  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.MirroredRepeatWrapping;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+export function makeBarkMaps(kind: BarkKind, seed: number): BarkMaps {
+  const { c, ctx } = newCanvas(BARK_W, BARK_H);
+  const r = stream(seed);
+  const base = BARK_BASE[kind];
+
+  ctx.fillStyle = rgb(base[0], base[1], base[2], 1);
+  ctx.fillRect(0, 0, BARK_W, BARK_H);
+
+  if (kind === 'birch') {
+    // Birch is the opposite of every other bark here: a pale sheet broken by
+    // dark HORIZONTAL lenticels and the odd charcoal scar. Without the
+    // white-bark species a Eastern-European treeline never reads right.
+    for (let i = 0; i < 220; i++) {
+      const y = r() * BARK_H;
+      const x = r() * BARK_W;
+      const w = 4 + r() * 26;
+      const mul = 0.24 + r() * 0.3;
+      ctx.fillStyle = rgb(base[0] * mul, base[1] * mul, base[2] * mul, 0.55 + r() * 0.4);
+      ctx.fillRect(x, y, w, 0.8 + r() * 2.2);
+      if (x + w > BARK_W) ctx.fillRect(x - BARK_W, y, w, 0.8 + r() * 2.2);
+    }
+    for (let i = 0; i < 16; i++) {
+      const y = r() * BARK_H;
+      const x = r() * BARK_W;
+      ctx.fillStyle = rgb(52 + r() * 26, 46 + r() * 22, 40 + r() * 18, 0.5);
       ctx.beginPath();
-      ctx.ellipse(x, y, size, size * 0.7, a, 0, Math.PI * 2);
+      ctx.ellipse(x, y, 5 + r() * 12, 2.5 + r() * 6, 0, 0, Math.PI * 2);
       ctx.fill();
     }
-  } else {
-    // Pine: layered drooping needle fans down a vertical axis.
-    for (let layer = 0; layer < 9; layer++) {
-      const y = 26 + layer * 25;
-      const width = 22 + layer * 11;
-      for (let i = 0; i < 60; i++) {
-        const t = i / 60;
-        const x = 128 + (t - 0.5) * 2 * width * (0.85 + hash2(seed, layer * 100 + i) * 0.3);
-        const g = 0.30 + hash2(seed + 1, layer * 100 + i) * 0.18;
-        ctx.strokeStyle = `rgba(${Math.floor(30 + g * 40)}, ${Math.floor(g * 200)}, ${Math.floor(30 + g * 46)}, 0.85)`;
-        ctx.lineWidth = 2.2;
-        ctx.beginPath();
-        ctx.moveTo(128, y - 16);
-        ctx.quadraticCurveTo(x, y - 6, x + (x - 128) * 0.12, y + 10 + hash2(seed + 2, i) * 6);
-        ctx.stroke();
+    for (let i = 0; i < 1800; i++) {
+      const mul = 0.82 + r() * 0.26;
+      ctx.fillStyle = rgb(base[0] * mul, base[1] * mul, base[2] * mul, 0.3);
+      ctx.fillRect(r() * BARK_W, r() * BARK_H, 1 + r() * 2.2, 1 + r() * 1.4);
+    }
+    // Heavy lenticel BANDING: ~14 dark bands up the trunk, each a broken run of
+    // jittered dashes 3-8 px tall at a 0.35 value multiplier. Without these a
+    // birch is a white PVC pole, which is exactly how the treeline read.
+    for (let band = 0; band < 14; band++) {
+      const y = ((band + 0.5) / 14) * BARK_H + (r() - 0.5) * 7;
+      const th = 3 + r() * 5;
+      let x = -r() * 30;
+      while (x < BARK_W) {
+        const seg = 6 + r() * 34;
+        if (r() > 0.22) {
+          const mul = 0.30 + r() * 0.14;
+          ctx.fillStyle = rgb(base[0] * mul, base[1] * mul, base[2] * mul, 0.55 + r() * 0.35);
+          ctx.fillRect(x, y + (r() - 0.5) * 2.2, seg, th * (0.6 + r() * 0.7));
+        }
+        x += seg + r() * 14;
       }
     }
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
+  } else {
+    // Vertical fissures, drawn three times so the texture wraps the trunk.
+    const stroke = (x: number, wide: number, mul: number, alpha: number, wob: number) => {
+      for (const off of [-BARK_W, 0, BARK_W]) {
+        ctx.strokeStyle = rgb(base[0] * mul, base[1] * mul, base[2] * mul, alpha);
+        ctx.lineWidth = wide;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x + off, -8);
+        let px = x + off;
+        for (let y = 0; y <= BARK_H + 8; y += 32) {
+          const nx = x + off + Math.sin((y / BARK_H) * Math.PI * 2 + wob) * wide * 1.4 + (r() - 0.5) * wob * 3;
+          ctx.quadraticCurveTo((px + nx) * 0.5, y - 16, nx, y);
+          px = nx;
+        }
+        ctx.stroke();
+      }
+    };
+    for (let i = 0; i < 30; i++) stroke(r() * BARK_W, 2.5 + r() * 6.5, 0.42 + r() * 0.14, 0.85, 0.6 + r() * 1.4);
+    for (let i = 0; i < 44; i++) stroke(r() * BARK_W, 1.2 + r() * 3.0, 1.16 + r() * 0.26, 0.55, 0.4 + r() * 1.2);
 
-/** Grass clump: a fan of tapered blade strokes with a hot-spot near the roots. */
-export function makeGrassClumpTexture(seed: number): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 128;
-  const ctx = c.getContext('2d')!;
-  ctx.clearRect(0, 0, 256, 128);
-  for (let i = 0; i < 90; i++) {
-    const baseX = 24 + hash2(seed, i) * 208;
-    const lean = (hash2(seed + 1, i) - 0.5) * 70;
-    const h = 52 + hash2(seed + 2, i) * 66;
-    const w = 1.6 + hash2(seed + 3, i) * 2.4;
-    const g = 0.36 + hash2(seed + 4, i) * 0.34;
-    const dry = hash2(seed + 5, i);
-    // Erangel palette: yellow-green meadow, only a minority of dry straw blades.
-    const r = Math.floor(48 + dry * 72);
-    const green = Math.floor(88 + g * 130);
-    const b = Math.floor(24 + dry * 18);
-    const grad = ctx.createLinearGradient(baseX, 128, baseX + lean, 128 - h);
-    grad.addColorStop(0, `rgba(${Math.floor(r * 0.55)}, ${Math.floor(green * 0.55)}, ${Math.floor(b * 0.6)}, 0.95)`);
-    grad.addColorStop(1, `rgba(${r}, ${green}, ${b}, 0.9)`);
-    ctx.strokeStyle = grad;
-    ctx.lineWidth = w;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(baseX, 130);
-    ctx.quadraticCurveTo(baseX + lean * 0.3, 128 - h * 0.6, baseX + lean, 128 - h);
-    ctx.stroke();
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
-
-export interface TreeSpeciesGeo {
-  trunk: THREE.BufferGeometry;
-  /** Card positions/rotations in local space: [x, y, z, yaw, w, h]. */
-  cards: [number, number, number, number, number, number][];
-}
-
-export function treeGeometry(species: 'broadleaf' | 'pine', seed: number): TreeSpeciesGeo {
-  if (species === 'broadleaf') {
-    const height = 7 + hash2(seed, 1) * 3.5;
-    const trunk = new THREE.CylinderGeometry(0.13, 0.24, height * 0.55, 6);
-    trunk.translate(0, height * 0.275, 0);
-    const cards: TreeSpeciesGeo['cards'] = [];
-    const crownY = height * 0.62;
-    const crownR = 1.7 + hash2(seed, 2) * 1.1;
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI + hash2(seed, i + 3) * 0.5;
-      cards.push([
-        (hash2(seed, i + 7) - 0.5) * crownR * 0.9,
-        crownY + (hash2(seed, i + 11) - 0.35) * 1.6,
-        (hash2(seed, i + 13) - 0.5) * crownR * 0.9,
-        a,
-        crownR * 2.4,
-        crownR * 2.1,
-      ]);
+    const plates = kind === 'pine' ? 90 : 46;
+    for (let i = 0; i < plates; i++) {
+      const x = r() * BARK_W;
+      const y = r() * BARK_H;
+      const mul = 0.6 + r() * 0.7;
+      ctx.strokeStyle = rgb(base[0] * mul, base[1] * mul, base[2] * mul, 0.5);
+      ctx.lineWidth = 1 + r() * 1.8;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + (r() - 0.5) * 22, y + (r() - 0.5) * 10);
+      ctx.stroke();
     }
-    return { trunk, cards };
+    for (let i = 0; i < 2600; i++) {
+      const mul = 0.66 + r() * 0.68;
+      ctx.fillStyle = rgb(base[0] * mul, base[1] * mul, base[2] * mul, 0.35);
+      ctx.fillRect(r() * BARK_W, r() * BARK_H, 1 + r() * 1.6, 1 + r() * 2.6);
+    }
   }
-  const height = 9 + hash2(seed, 1) * 4;
-  const trunk = new THREE.CylinderGeometry(0.1, 0.22, height * 0.45, 6);
-  trunk.translate(0, height * 0.225, 0);
-  const cards: TreeSpeciesGeo['cards'] = [];
-  for (let i = 0; i < 3; i++) {
-    const a = (i / 3) * Math.PI;
-    cards.push([0, height * 0.55, 0, a, 2.6 + hash2(seed, 5) * 0.8, height * 0.85]);
+
+  const normalMap = normalFromCanvas(ctx, BARK_W, BARK_H, kind === 'birch' ? 2.0 : 3.4);
+
+  const map = new THREE.CanvasTexture(c);
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.wrapS = THREE.RepeatWrapping;
+  map.wrapT = THREE.MirroredRepeatWrapping;
+  map.anisotropy = 4;
+  return { map, normalMap };
+}
+
+// ---------------------------------------------------------------------------
+// Dead snag (unit space: 1.0 == tree height)
+// ---------------------------------------------------------------------------
+
+export function deadTreeGeometry(seed: number): THREE.BufferGeometry {
+  const r = stream(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  const th = 0.86;
+  const trunk = new THREE.CylinderGeometry(0.014, 0.038, th, 8, 1, true);
+  trunk.translate(0, th * 0.5, 0);
+  parts.push(trunk);
+  // Root flare: a snag that meets the ground as a sliced cylinder reads as a
+  // pole pushed into a lit plane, which is the whole of the contact finding.
+  const flare = new THREE.CylinderGeometry(0.038, 0.074, 0.075, 8, 1, true);
+  flare.translate(0, 0.0, 0);
+  parts.push(flare);
+  // Pitched 35-55 deg off vertical like a living branch, and tapered — cycle 2
+  // ran 0.6-1.2 rad, i.e. very nearly horizontal sticks.
+  for (let i = 0; i < 5; i++) {
+    const len = 0.14 + r() * 0.22;
+    const b = new THREE.CylinderGeometry(0.003, 0.012, len, 3, 1, true);
+    b.translate(0, len * 0.5, 0);
+    const m = new THREE.Matrix4().makeRotationZ(0.58 + r() * 0.42);
+    m.premultiply(new THREE.Matrix4().makeRotationY(r() * Math.PI * 2));
+    m.setPosition(0, 0.34 + r() * 0.44, 0);
+    b.applyMatrix4(m);
+    parts.push(b);
   }
-  return { trunk, cards };
+  const merged = mergeGeometries(parts, false);
+  for (const p of parts) p.dispose();
+  return merged ?? trunk;
 }

@@ -29,9 +29,14 @@ export interface SplatWeights {
 export interface FieldInfo {
   /** Parcel palette coordinate 0..1 — picks the crop family in the shader. */
   tone: number;
-  /** Furrow/plough direction as a unit vector in world XZ. */
-  dirX: number;
-  dirZ: number;
+  /**
+   * Furrow/plough direction packed as an angle in 0..1 (atan2 / TAU + 0.5).
+   * Two channels used to carry dirX/dirZ; the freed channel now carries `edge`,
+   * without which the parcels have no boundaries and the plains read as noise.
+   */
+  angle: number;
+  /** Distance to the parcel boundary, 0 on the margin -> 1 at ~6m inside. */
+  edge: number;
   /** How strongly this point reads as cultivated land (flat, low, off-road). */
   farm: number;
 }
@@ -39,6 +44,8 @@ export interface FieldInfo {
 export interface Surface {
   splat: SplatWeights;
   field: FieldInfo;
+  /** Terrain height at this point — the map bake needs it for the sea-depth channel. */
+  height: number;
 }
 
 interface RoadSegment {
@@ -130,6 +137,26 @@ export class Heightfield {
       const crestMask = hillMask * smoothstep(0.55, 0.95, ridge);
       if (crestMask > 0.01) {
         hills += this.hills.ridged(nx * 8.6 + 4.1, nz * 8.6 - 2.7, { octaves: 3 }) * 7 * crestMask;
+        // SADDLES AND NOTCHES. Without this the ridgeline is a straight-edged
+        // pyramid with a single sharp apex — the capture reads as three clean
+        // cones and there is nothing in the silhouette to give the massif a
+        // scale. A second ridged field subtracted along the crest at ~230m
+        // wavelength cuts cols between summits and breaks every straight edge,
+        // which is the cheap stand-in for a drainage-network solve.
+        const notch = clamp(this.hills.ridged(nx * 5.2 - 15.9, nz * 5.2 + 8.4, { octaves: 2 }), 0, 1);
+        hills -= Math.pow(notch, 1.6) * 15 * crestMask;
+      }
+      // Drainage. A raw fBm dome has no gullies, which is what makes a
+      // procedural mountain read as a clay blob: subtracting a ridged field
+      // incises narrow channels along its crest lines, so the face gets
+      // spurs and re-entrants instead of one smooth shoulder. Strongest on the
+      // flanks, tapering out at the summit where there is no catchment yet.
+      const flank = hillMask * (1 - smoothstep(0.62, 0.96, ridge));
+      if (flank > 0.01) {
+        const gully = clamp(this.hills.ridged(nx * 9.5 - 7.3, nz * 9.5 + 3.9, { octaves: 3 }), 0, 1);
+        hills -= Math.pow(gully, 2.4) * 9.5 * flank;
+        const fine = clamp(this.hills.ridged(nx * 21.0 + 12.7, nz * 21.0 - 5.1, { octaves: 2 }), 0, 1);
+        hills -= Math.pow(fine, 3.0) * 2.6 * flank;
       }
     }
 
@@ -137,9 +164,17 @@ export class Heightfield {
     const detail = this.detail.fbm(nx * 22, nz * 22, { octaves: 3 }) * 1.5;
 
     // Coast falloff: island edge drops below sea toward south and east rims.
-    const edge = Math.max(Math.abs(x), Math.abs(z)) / HALF;
-    const coast = smoothstep(0.78, 1.0, edge) * 26;
-    const shoreBias = smoothstep(0.55, 1.0, Math.max(z / HALF, x / HALF) * 0.5 + Math.max(Math.abs(x), Math.abs(z)) / HALF * 0.5) * 10;
+    // The old `max(|x|,|z|)` is a square with a hard crease at the diagonal and
+    // a ruled shoreline; a p-norm rounds it off, and a low-frequency wobble
+    // stops the waterline being a drawn straight line. Both ramps read the SAME
+    // edge value so they cannot leave a terrace step between them.
+    const ex = Math.abs(x) / HALF;
+    const ez = Math.abs(z) / HALF;
+    const edge = Math.pow(Math.pow(ex, 8) + Math.pow(ez, 8), 0.125);
+    const wob = this.base.fbm(nx * 6.5 + 9.1, nz * 6.5 - 4.4, { octaves: 3 }) * 0.055;
+    const edgeW = edge + wob;
+    const coast = smoothstep(0.78, 1.0, edgeW) * 26;
+    const shoreBias = smoothstep(0.55, 1.0, Math.max(z / HALF, x / HALF) * 0.5 + edgeW * 0.5) * 10;
 
     return rolling + swell + hills + detail - coast - shoreBias;
   }
@@ -154,7 +189,10 @@ export class Heightfield {
     const coarse =
       (this.rawHeight(x + 14, z) + this.rawHeight(x - 14, z) + this.rawHeight(x, z + 14) + this.rawHeight(x, z - 14)) * 0.25;
     const t = smoothstep(ROAD_SHOULDER, ROAD_HALF * 0.7, rd);
-    return lerp(h, coarse + 0.15, t * 0.88);
+    // Carve the metalled strip INTO the ground. A road that sits on top of the
+    // heightfield reads as a decal painted over the field; 15cm of cut plus the
+    // shoulder blend is enough for the verge to catch its own shadow.
+    return lerp(h, coarse - 0.15, t * 0.88);
   }
 
   /** Analytic-ish normal from central differences. */
@@ -177,7 +215,10 @@ export class Heightfield {
    * Farm parcel lookup: which cultivated cell this point falls in, how close it
    * is to the margin between cells, and that cell's crop tone / plough angle.
    */
-  private parcel(x: number, z: number): { tone: number; dirX: number; dirZ: number; margin: number } {
+  private parcel(
+    x: number,
+    z: number
+  ): { tone: number; angle: number; margin: number; edge: number } {
     const wx = this.parcelNoise.fbm(x / 520, z / 520, { octaves: 2 }) * PARCEL_WARP;
     const wz = this.parcelNoise.fbm(x / 520 + 21.7, z / 520 - 9.3, { octaves: 2 }) * PARCEL_WARP;
     const v = voronoiCell((x + wx) / PARCEL_CELL, (z + wz) / PARCEL_CELL, this.seed ^ 0x5f3a);
@@ -185,7 +226,10 @@ export class Heightfield {
     const ang = hash2(v.id, 43, this.seed + 23) * Math.PI;
     // f2 - f1 is 0 exactly on the cell boundary; ~0.06 cells is a 5m margin.
     const margin = smoothstep(0.075, 0.012, v.f2 - v.f1);
-    return { tone, dirX: Math.cos(ang), dirZ: Math.sin(ang), margin };
+    // Same quantity in metres, normalised over ~7m, kept for the shader so it
+    // can draw an actual unploughed strip between neighbouring crops.
+    const edge = clamp(((v.f2 - v.f1) * PARCEL_CELL) / 7.0, 0, 1);
+    return { tone, angle: ang / Math.PI, margin, edge };
   }
 
   /**
@@ -206,10 +250,30 @@ export class Heightfield {
     // along the faces instead of coating every steep surface evenly.
     const outcrop = this.splatNoise.fbm(x / 145 + 51.3, z / 145 - 22.7, { octaves: 2 });
 
-    // Rock: STEEP FACES ONLY, with noisy edges so the boundary never reads as a
+    // Rock: STEEP FACES, with noisy edges so the boundary never reads as a
     // contour line. An altitude term used to live here and it painted every
-    // summit — which looked like snow, not Erangel.
-    let rock = smoothstep(0.30, 0.52, slope + rockNoise * 0.055 + outcrop * 0.075);
+    // summit — which looked like snow, not Erangel. The old 0.30..0.52 band on
+    // (1 - n.y) meant 46-61 degrees, which nothing on this map ever reaches, so
+    // the rock category never surfaced and the hill faces stayed grass-green.
+    // 0.21..0.46 is roughly 37-56 degrees: the actual steep faces.
+    //
+    // CYCLE 5: the jitter was both TINY and BIASED. `rockNoise * 0.05 +
+    // outcrop * 0.075` is uncentred fBm, so it contributed a constant +0.0625
+    // offset plus at most +/-0.062 of actual variation against a transition band
+    // 0.25 wide — i.e. under a quarter of a band width. On a cone, slope is a
+    // monotonic function of altitude, so a threshold that tight traces a
+    // CONTOUR LINE, which is exactly what the capture shows: rock -> tan ->
+    // lime -> rock as perfectly parallel constant-width stripes wrapping every
+    // peak, with roughly 2px transitions.
+    //
+    // Now centred (so the mean coverage is unchanged), widened to +/-0.23 —
+    // just under a full band width — and GATED by `faceted` so the jitter can
+    // only fire where a face actually exists. Without that gate a +0.23 excursion
+    // paints rock onto flat farmland.
+    const rn = rockNoise - 0.5;
+    const on = outcrop - 0.5;
+    const faceted = smoothstep(0.06, 0.30, slope);
+    let rock = smoothstep(0.21, 0.46, slope + 0.0625 + (rn * 0.20 + on * 0.26) * faceted);
     rock = clamp(rock, 0, 1);
 
     // Cultivated-land mask: flat, low, not rock, not road.
@@ -224,9 +288,13 @@ export class Heightfield {
     // the "worked field" family and matches parcelTint() in the terrain shader.
     const ploughed = smoothstep(0.80, 0.90, par.tone) * farmBase;
 
-    // Dirt: scree under the rock line, field margins, ploughed cells, verges,
-    // beach.
-    let dirt = smoothstep(0.155, 0.32, slope + rockNoise * 0.05) * 0.8;
+    // Dirt: scree/talus apron under the rock line, field margins, ploughed
+    // cells, verges, beach. The scree band is deliberately wider than the rock
+    // band underneath it so grass never butts straight onto stone.
+    // Same treatment: the scree apron's own threshold traced a second contour
+    // just below the rock line, which is what produced the tan stripe.
+    let dirt =
+      smoothstep(0.075, 0.20, slope + 0.025 + (rn * 0.090 + on * 0.075) * smoothstep(0.02, 0.16, slope)) * 0.85;
     dirt = Math.max(dirt, ploughed * 0.82);
     dirt = Math.max(dirt, par.margin * farmBase * 0.55);
     dirt = Math.max(dirt, smoothstep(ROAD_FALLOFF, ROAD_HALF, rd) * 0.6);
@@ -235,14 +303,17 @@ export class Heightfield {
 
     const rockW = rock;
     const dirtW = clamp(dirt, 0, 1) * (1 - rockW);
-    const grassW = Math.max(0, 1 - rockW - dirtW);
 
     return {
-      splat: { grass: grassW, dirt: dirtW, rock: rockW, road: roadT },
+      // grass is 1 - dirt - rock by construction, so the splat map does not
+      // need to store it — the freed red channel carries sea depth for the
+      // water shader instead (see Terrain.buildMaps).
+      height: h,
+      splat: { grass: Math.max(0, 1 - rockW - dirtW), dirt: dirtW, rock: rockW, road: roadT },
       field: {
         tone: par.tone,
-        dirX: par.dirX,
-        dirZ: par.dirZ,
+        angle: par.angle,
+        edge: par.edge,
         // Margins keep their tint (the crop stops at the hedge, it does not
         // fade), but ploughed cells drop the tint since they are bare dirt.
         farm: clamp(farmBase * (1 - ploughed * 0.55), 0, 1),

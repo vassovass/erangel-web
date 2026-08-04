@@ -1,0 +1,503 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>character review sheet</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+      #app { position: fixed; inset: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      // Lane-owned review surface for the characters stream. It reuses the real
+      // renderer / atmosphere / post pipeline so colour and grading match the
+      // game frame, but drops terrain (a 2min bake) for a mid-value grass plane
+      // and offers the three distances the brief actually cares about (8/20/40m
+      // at gameplay FOV) alongside the close inspection views.
+      //
+      // It also carries the mechanical gates the last cycle lacked: a silhouette
+      // pass (characters rendered pure black on white, read back off a render
+      // target) that proves a frame CONTAINS characters and measures how broken
+      // the outline is, a value-separation probe against the ground, and a real
+      // contact-set report per figure. Not part of the game bundle.
+      import * as THREE from 'three';
+      import { createRenderer } from '../core/renderer.ts';
+      import { createAtmosphere } from '../world/sky.ts';
+      import { PostPipeline } from '../post/pipeline.ts';
+      import {
+        buildCharacter, poseCharacter, contactReport, auditValueLadder, clothSigma,
+      } from './charactergen.ts';
+
+      const app = document.getElementById('app');
+      const renderer = createRenderer(app);
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.05, 400);
+
+      const atmo = createAtmosphere(17.2);
+      scene.add(atmo.sky, atmo.sun, atmo.sun.target, atmo.hemi);
+      atmo.bakeEnvironment(renderer, scene);
+      atmo.sun.target.position.set(0, 0, 0);
+      atmo.sun.position.copy(atmo.sunDir).multiplyScalar(60);
+      atmo.sun.castShadow = true;
+
+      // Mid-value dry-grass ground with a little break-up: a flat fill gives no
+      // depth cue and makes every value comparison against it meaningless.
+      function grassTexture() {
+        const c = document.createElement('canvas');
+        c.width = c.height = 256;
+        const g = c.getContext('2d');
+        const img = g.createImageData(256, 256);
+        let h = 2463534242 >>> 0;
+        const rnd = () => {
+          h ^= h << 13; h >>>= 0; h ^= h >> 17; h ^= h << 5; h >>>= 0;
+          return h / 4294967296;
+        };
+        for (let i = 0; i < 256 * 256; i++) {
+          const n = 0.78 + 0.22 * rnd();
+          img.data[i * 4 + 0] = 138 * n;
+          img.data[i * 4 + 1] = 140 * n;
+          img.data[i * 4 + 2] = 100 * n;
+          img.data[i * 4 + 3] = 255;
+        }
+        g.putImageData(img, 0, 0);
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(90, 90);
+        return t;
+      }
+
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(400, 400),
+        new THREE.MeshStandardMaterial({ map: grassTexture(), color: 0xffffff, roughness: 1 })
+      );
+      ground.rotation.x = -Math.PI / 2;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      // ---- backdrops -------------------------------------------------------
+      // Cycle 3's distance plates were shot on a featureless flat plane with no
+      // cover, no vegetation and no building values behind the figures, which is
+      // the one context where readability is trivially easy: any body separates
+      // from a single uniform khaki. A value ladder has to be tested against a
+      // LIGHT background and a DARK one as well, so these two exist and each is
+      // switched on only for its own view.
+      const BACKDROP = {};
+      {
+        const wall = new THREE.Group();
+        // Authored LINEAR against a key of 22: a plausible sRGB plaster hex here
+        // clips to paper white and stops being a value test at all.
+        const plaster = new THREE.MeshStandardMaterial({ color: 0x53504a, roughness: 0.96 });
+        const barn = new THREE.Mesh(new THREE.BoxGeometry(22, 6.2, 0.5), plaster);
+        barn.position.set(0, 3.1, -7.5);
+        barn.receiveShadow = true;
+        wall.add(barn);
+        const roof = new THREE.Mesh(
+          new THREE.BoxGeometry(23.4, 0.5, 2.2),
+          new THREE.MeshStandardMaterial({ color: 0x5e5348, roughness: 0.8 })
+        );
+        roof.position.set(0, 6.35, -7.0);
+        wall.add(roof);
+        scene.add(wall);
+        BACKDROP.wall = wall;
+
+        const trees = new THREE.Group();
+        const bark = new THREE.MeshStandardMaterial({ color: 0x2b3324, roughness: 1 });
+        let h = 991;
+        const rnd = () => { h ^= h << 13; h >>>= 0; h ^= h >> 17; h ^= h << 5; h >>>= 0; return h / 4294967296; };
+        for (let i = -9; i <= 9; i++) {
+          const t = new THREE.Mesh(new THREE.BoxGeometry(3.2 + rnd() * 1.8, 7 + rnd() * 5, 3), bark);
+          t.position.set(i * 3.0 + rnd() * 1.4, 3.5 + rnd() * 2.5, -24 - rnd() * 5);
+          trees.add(t);
+        }
+        scene.add(trees);
+        BACKDROP.trees = trees;
+      }
+      // Tagged so the silhouette / backface passes render them as BACKGROUND. An
+      // untagged barn wall rendered pure black would be counted as character
+      // area and would let the presence gate certify a frame with no bots in it,
+      // which is exactly the failure that reached the panel last cycle.
+      for (const k of Object.keys(BACKDROP)) BACKDROP[k].traverse((o) => { o.userData.bg = true; });
+      function setBackdrop(name) {
+        for (const k of Object.keys(BACKDROP)) BACKDROP[k].visible = k === name;
+      }
+      setBackdrop(null);
+
+      /** Contact patches are ground occlusion, never character silhouette. */
+      const isChar = (o) => !(o === ground || o.userData.bg || o.name === 'char-contact');
+
+      // seed, x, yaw, speed, crouch, aimPitch, aimYaw, dead
+      const LINE = [
+        [4000, -3.6, 0.55, 0.95, 0, 0.0, -0.35, 0],
+        [4031, -1.8, 0.15, 0.0, 0, -0.05, 0.55, 0],
+        [4062, 0.0, -0.35, 0.45, 1, 0.02, 0.20, 0],
+        [4093, 1.8, 2.35, 0.85, 0, 0.0, -0.60, 0],
+        [4124, 3.6, 1.0, 0.0, 0, 0.35, 0.0, 0],
+      ];
+      // seed, x, yaw, z
+      // Placed so no corpse projects ONTO a standing figure in the lineup view.
+      // Cycle 3's third body sat 11m behind the fourth bot and landed on its hip
+      // in screen space; three reviewers independently read it as a corpse
+      // floating at waist height, and the contact report said it was resting
+      // within 4cm the whole time. A review sheet that invites a false reading
+      // is a broken sheet — the fix is composition, and the actual grounding fix
+      // is the contact patch every figure now carries.
+      const DEAD = [
+        [4155, -3.4, 0.9, -10.4],
+        [4186, 1.7, 2.4, -13.2],
+        [4217, 6.4, 4.3, -11.6],
+      ];
+
+      const TAGGED = [];
+      for (const [seed, x, yaw, speed, crouch, pitch, ayaw] of LINE) {
+        const rig = buildCharacter(seed);
+        rig.root.position.set(x, 0, 0);
+        rig.root.rotation.y = yaw;
+        poseCharacter(rig, {
+          walkPhase: 1.1 + seed * 0.013, speed01: speed, aimPitch: pitch,
+          aimYaw: ayaw, crouch, dead: 0,
+        });
+        scene.add(rig.root);
+        TAGGED.push({ tag: `alive s=${speed} c=${crouch}`, rig });
+      }
+      for (const [seed, x, yaw, z] of DEAD) {
+        const rig = buildCharacter(seed);
+        rig.root.position.set(x, 0, z);
+        rig.root.rotation.y = yaw;
+        poseCharacter(rig, { walkPhase: 0, speed01: 0, aimPitch: 0, crouch: 0, dead: 1 });
+        scene.add(rig.root);
+        TAGGED.push({ tag: `dead v${seed % 3}`, rig });
+      }
+
+      // ---- gate 1: contact set --------------------------------------------
+      // minY alone certified a corpse as grounded while most of it hung in the
+      // air. This reports how many of the body's weight-bearing samples are
+      // actually within 45mm of the deck.
+      window.__DIAG__ = () => {
+        scene.updateMatrixWorld(true);
+        return TAGGED.map(({ tag, rig }) => ({ tag, ...contactReport(rig) }));
+      };
+
+      // ---- gate 2: silhouette pass ----------------------------------------
+      // Characters pure black on white, rendered into a render target and read
+      // back. Proves the frame contains characters (an empty capture must FAIL,
+      // not pass silently) and measures outline break-up: a plain featureless
+      // humanoid has a much lower perimeter-to-area ratio than a kitted one.
+      const SIL_W = 640, SIL_H = 360;
+      const silRT = new THREE.WebGLRenderTarget(SIL_W, SIL_H, { depthBuffer: true });
+      const silMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+      const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const buf = new Uint8Array(SIL_W * SIL_H * 4);
+
+      function silhouette() {
+        scene.updateMatrixWorld(true);
+        const oldBg = scene.background, oldFog = scene.fog, oldEnv = scene.environment;
+        const oldClear = renderer.getClearColor(new THREE.Color());
+        const oldClearA = renderer.getClearAlpha();
+        const saved = [];
+        scene.traverse((o) => {
+          if (o.isMesh || o.isSkinnedMesh) {
+            saved.push([o, o.material]);
+            o.material = isChar(o) ? silMat : whiteMat;
+          }
+        });
+        scene.background = new THREE.Color(0xffffff);
+        scene.fog = null;
+        scene.environment = null;
+        const skyVis = atmo.sky.visible;
+        atmo.sky.visible = false;
+        renderer.setRenderTarget(silRT);
+        renderer.setClearColor(0xffffff, 1);
+        renderer.clear();
+        renderer.render(scene, camera);
+        renderer.readRenderTargetPixels(silRT, 0, 0, SIL_W, SIL_H, buf);
+        renderer.setRenderTarget(null);
+        for (const [o, m] of saved) o.material = m;
+        scene.background = oldBg; scene.fog = oldFog; scene.environment = oldEnv;
+        atmo.sky.visible = skyVis;
+        renderer.setClearColor(oldClear, oldClearA);
+
+        const mask = new Uint8Array(SIL_W * SIL_H);
+        let area = 0;
+        for (let i = 0; i < SIL_W * SIL_H; i++) {
+          const lum = (buf[i * 4] + buf[i * 4 + 1] + buf[i * 4 + 2]) / 3;
+          if (lum < 110) { mask[i] = 1; area++; }
+        }
+        let perim = 0;
+        for (let y = 1; y < SIL_H - 1; y++) {
+          for (let x = 1; x < SIL_W - 1; x++) {
+            const i = y * SIL_W + x;
+            if (!mask[i]) continue;
+            if (!mask[i - 1] || !mask[i + 1] || !mask[i - SIL_W] || !mask[i + SIL_W]) perim++;
+          }
+        }
+        // Per-figure visibility, from each rig's projected head.
+        const v = new THREE.Vector3();
+        const v2 = new THREE.Vector3();
+        let visible = 0;
+        let minH = Infinity;
+        const perRig = TAGGED.map(({ tag, rig }) => {
+          const head = rig.bones.head;
+          head.getWorldPosition(v);
+          v.project(camera);
+          const sx = Math.round((v.x * 0.5 + 0.5) * SIL_W);
+          const sy = Math.round((1 - (v.y * 0.5 + 0.5)) * SIL_H);
+          let px = 0;
+          const R = 26;
+          for (let y = Math.max(0, sy - R); y < Math.min(SIL_H, sy + R); y++) {
+            for (let x = Math.max(0, sx - R); x < Math.min(SIL_W, sx + R); x++) {
+              if (mask[y * SIL_W + x]) px++;
+            }
+          }
+          if (px > 6 && v.z < 1) visible++;
+          // Screen-space height of THIS figure, in the delivered 1080p frame.
+          // Every claim about how these bots read at 8-40m has to be backed by a
+          // figure that is actually big enough on the plate to read; last cycle
+          // the "four bots at mid distance" shot contained one 30px bot behind
+          // a barn and nobody could tell, because nothing measured it.
+          v2.copy(rig.root.position);
+          v2.project(camera);
+          const footY = (1 - (v2.y * 0.5 + 0.5)) * SIL_H;
+          const headY = (1 - (v.y * 0.5 + 0.5)) * SIL_H;
+          const hpx = +(Math.abs(footY - headY) * (1080 / SIL_H)).toFixed(1);
+          const inFrustum = v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05;
+          if (inFrustum && tag.startsWith('alive')) minH = Math.min(minH, hpx);
+          return { tag, sx, sy, px, hpx, inFrustum };
+        });
+        return {
+          area,
+          perim,
+          // perimeter^2 / area: 4*pi for a disc, higher the more broken the outline
+          rough: area > 0 ? +((perim * perim) / area).toFixed(1) : 0,
+          coverage: +((area / (SIL_W * SIL_H)) * 100).toFixed(3),
+          visible,
+          minHeightPx: isFinite(minH) ? +minH.toFixed(1) : 0,
+          perRig,
+        };
+      }
+
+      // ---- gate 2b: VISIBLE BACKFACES -------------------------------------
+      // An open-ended limb tube shows its own bore: the nearest surface at
+      // those pixels is a BACK face, which is impossible on a closed solid.
+      // Rendering the rigs double-sided with gl_FrontFacing driving the colour
+      // therefore counts exactly the pixels where geometry is open to camera.
+      // Cycle 2's arms, thighs and shins were all authored capTop:false AND
+      // capBot:false, so every death variant and every running leg exposed one.
+      //
+      // The threshold is not zero: collars, cuffs, the jacket hem, the
+      // cummerbund and the boot collar are deliberately open shells whose
+      // inside is meant to be seen, and they contribute a few hundred pixels of
+      // legitimate sliver. A BORE is an order of magnitude more than that.
+      const bfMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+      bfMat.onBeforeCompile = (sh) => {
+        sh.fragmentShader = sh.fragmentShader.replace(
+          '#include <opaque_fragment>',
+          '#include <opaque_fragment>\n\tgl_FragColor = gl_FrontFacing ? vec4(0.0,0.0,0.0,1.0) : vec4(1.0,0.0,1.0,1.0);'
+        );
+      };
+      bfMat.customProgramCacheKey = () => 'char-backface';
+
+      window.__BACKFACE__ = () => {
+        scene.updateMatrixWorld(true);
+        const saved = [];
+        scene.traverse((o) => {
+          if (o.isMesh || o.isSkinnedMesh) {
+            saved.push([o, o.material]);
+            o.material = isChar(o) ? bfMat : whiteMat;
+          }
+        });
+        const oldBg = scene.background, oldFog = scene.fog, oldEnv = scene.environment;
+        const oldClear = renderer.getClearColor(new THREE.Color());
+        const oldClearA = renderer.getClearAlpha();
+        const skyVis = atmo.sky.visible;
+        scene.background = new THREE.Color(0xffffff);
+        scene.fog = null;
+        scene.environment = null;
+        atmo.sky.visible = false;
+        renderer.setRenderTarget(silRT);
+        renderer.setClearColor(0xffffff, 1);
+        renderer.clear();
+        renderer.render(scene, camera);
+        renderer.readRenderTargetPixels(silRT, 0, 0, SIL_W, SIL_H, buf);
+        renderer.setRenderTarget(null);
+        for (const [o, m] of saved) o.material = m;
+        scene.background = oldBg; scene.fog = oldFog; scene.environment = oldEnv;
+        atmo.sky.visible = skyVis;
+        renderer.setClearColor(oldClear, oldClearA);
+
+        let back = 0, front = 0;
+        for (let i = 0; i < SIL_W * SIL_H; i++) {
+          const r = buf[i * 4], g = buf[i * 4 + 1], b = buf[i * 4 + 2];
+          if (r > 180 && g < 80 && b > 180) back++;
+          else if (r < 90 && g < 90 && b < 90) front++;
+        }
+        return {
+          back,
+          front,
+          bfRatio: front > 0 ? +((back / (front + back)) * 100).toFixed(3) : 0,
+        };
+      };
+
+      // ---- gate 2c: value-ladder audit over many seeds ---------------------
+      // Builds N characters and measures the mean sRGB luma actually written
+      // into each palette slot, then asserts the band and the ordering. A
+      // mis-tinted seed (cycle 2 shipped one with 0.645-luma boots and a
+      // near-white rifle) now fails the run instead of reaching the panel.
+      window.__AUDIT__ = (n = 64, from = 0) => {
+        const seeds = [];
+        for (let i = from; i < from + n; i++) seeds.push(4000 + i * 31);
+        const bad = auditValueLadder(seeds);
+        return { seeds: seeds.length, violations: bad.slice(0, 12), count: bad.length };
+      };
+
+      // ---- gate 2d: albedo variance ---------------------------------------
+      // A garment carrying one flat hue with only +/-11% noise has no pattern
+      // at all. This is the per-figure standard deviation of cloth luma.
+      window.__CLOTH__ = () => {
+        const v = TAGGED.map(({ tag, rig }) => ({ tag, sigma: clothSigma(rig) }));
+        return { min: Math.min(...v.map((x) => x.sigma)), per: v };
+      };
+
+      // ---- gate 3: value separation ---------------------------------------
+      // Mean luma inside the character mask vs the ground IMMEDIATELY AROUND
+      // each figure (a 10px ring off the mask), measured on a plain pre-post
+      // render. Comparing against the whole lower half instead made the number
+      // swing 10x with how much sky and how many corpses were in frame, which
+      // is not what "does this body separate from its background" means.
+      const litRT = new THREE.WebGLRenderTarget(SIL_W, SIL_H, { depthBuffer: true });
+      const lbuf = new Uint8Array(SIL_W * SIL_H * 4);
+
+      window.__METRICS__ = () => {
+        const sil = silhouette();
+        // Re-derive the mask (silhouette() left `mask` local; recompute cheaply).
+        const mask = new Uint8Array(SIL_W * SIL_H);
+        for (let i = 0; i < SIL_W * SIL_H; i++) {
+          const lum = (buf[i * 4] + buf[i * 4 + 1] + buf[i * 4 + 2]) / 3;
+          mask[i] = lum < 110 ? 1 : 0;
+        }
+        // Ring = everything within R px of a character pixel that is not one.
+        const R = 10;
+        const ring = new Uint8Array(SIL_W * SIL_H);
+        for (let y = 0; y < SIL_H; y++) {
+          for (let x = 0; x < SIL_W; x++) {
+            if (!mask[y * SIL_W + x]) continue;
+            for (let dy = -R; dy <= R; dy++) {
+              const yy = y + dy;
+              if (yy < 0 || yy >= SIL_H) continue;
+              for (let dx = -R; dx <= R; dx++) {
+                const xx = x + dx;
+                if (xx < 0 || xx >= SIL_W) continue;
+                const j = yy * SIL_W + xx;
+                if (!mask[j]) ring[j] = 1;
+              }
+            }
+          }
+        }
+
+        renderer.setRenderTarget(litRT);
+        renderer.clear();
+        renderer.render(scene, camera);
+        renderer.readRenderTargetPixels(litRT, 0, 0, SIL_W, SIL_H, lbuf);
+        renderer.setRenderTarget(null);
+        let cN = 0, cS = 0, gN = 0, gS = 0;
+        // Detail metric: mean |laplacian| strictly inside the mask.
+        let lapN = 0, lapS = 0;
+        // litRT is a plain render target, and three DISABLES tone mapping for
+        // any target that is not the canvas — so these pixels are raw LINEAR
+        // radiance, not what a viewer sees. Measuring "does this body separate
+        // from its background" on linear values understates the separation by
+        // roughly a factor of two and makes the gate meaningless. Both are put
+        // through the same ACES + exposure + sRGB the post pipeline applies, so
+        // the number is display-referred and a 0.10 gate means 0.10 of the
+        // 0..1 range a critic is actually looking at.
+        const EXPOSURE = 0.6;
+        const aces = (x) => {
+          const v = x * EXPOSURE;
+          const o = (v * (2.51 * v + 0.03)) / (v * (2.43 * v + 0.59) + 0.14);
+          const c = Math.max(0, Math.min(1, o));
+          return c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+        };
+        const lum = (i) =>
+          0.2126 * aces(lbuf[i * 4] / 255) +
+          0.7152 * aces(lbuf[i * 4 + 1] / 255) +
+          0.0722 * aces(lbuf[i * 4 + 2] / 255);
+        for (let y = 1; y < SIL_H - 1; y++) {
+          for (let x = 1; x < SIL_W - 1; x++) {
+            const i = y * SIL_W + x;
+            const L = lum(i);
+            if (mask[i]) {
+              cN++; cS += L;
+              if (mask[i - 1] && mask[i + 1] && mask[i - SIL_W] && mask[i + SIL_W]) {
+                const l4 = lum(i - 1) + lum(i + 1) + lum(i - SIL_W) + lum(i + SIL_W);
+                lapN++; lapS += Math.abs(4 * L - l4);
+              }
+            } else if (ring[i]) {
+              gN++; gS += L;
+            }
+          }
+        }
+        return {
+          ...sil,
+          charLuma: cN ? +(cS / cN).toFixed(4) : 0,
+          ringLuma: gN ? +(gS / gN).toFixed(4) : 0,
+          separation: cN && gN ? +Math.abs(cS / cN - gS / gN).toFixed(4) : 0,
+          detail: lapN ? +(lapS / lapN).toFixed(4) : 0,
+        };
+      };
+
+      const VIEWS = {
+        lineup: { pos: [0, 1.55, 7.4], target: [0, 1.05, 0], fov: 40 },
+        closeup: { pos: [-1.05, 1.48, 2.1], target: [-1.8, 1.18, 0], fov: 40 },
+        back: { pos: [0.9, 1.6, -3.4], target: [0.2, 1.05, 0], fov: 40 },
+        // Grazing angle on purpose: a steep look at a flat plane gives no depth
+        // cue, so a corpse resting on it reads as floating.
+        dead: { pos: [1.6, 1.05, -6.2], target: [1.4, 0.14, -12.0], fov: 66 },
+        // The three that matter. Gameplay FOV, so a 1.8m figure subtends the
+        // same pixel count it does in the real frame.
+        m8: { pos: [0, 1.72, 8.0], target: [0, 1.30, 0], fov: 70 },
+        m20: { pos: [0, 1.72, 20.0], target: [0, 1.30, 0], fov: 70 },
+        m40: { pos: [0, 1.72, 40.0], target: [0, 1.30, 0], fov: 70 },
+        // The two backgrounds a flat khaki plane never tests: a LIGHT building
+        // wall and a DARK treeline. If the value ladder only works against one
+        // mid tone it is not a ladder, it is a coincidence.
+        wall: { pos: [0, 1.62, 9.0], target: [0, 1.20, 0], fov: 70, bg: 'wall' },
+        treeline: { pos: [0, 1.72, 24.0], target: [0, 1.25, 0], fov: 70, bg: 'trees' },
+      };
+
+      let readyFrames = 0;
+      function applyView(name) {
+        const v = VIEWS[name] || VIEWS[String(name).replace(/^sheet-/, '')];
+        if (!v) return false;
+        setBackdrop(v.bg ?? null);
+        camera.fov = v.fov ?? 40;
+        camera.updateProjectionMatrix();
+        camera.position.set(...v.pos);
+        camera.lookAt(...v.target);
+        window.__SHOT_READY__ = undefined;
+        readyFrames = 0;
+        return true;
+      }
+      window.__APPLY_POSE__ = applyView;
+      applyView(new URLSearchParams(location.search).get('view') || 'lineup');
+
+      const post = new PostPipeline(renderer, scene, camera);
+      post.setSize(innerWidth, innerHeight);
+
+      function tick() {
+        requestAnimationFrame(tick);
+        post.render(1 / 60);
+        readyFrames++;
+        if (readyFrames === 12) {
+          window.__INFO__ = () => ({
+            calls: renderer.info.render.calls,
+            triangles: renderer.info.render.triangles,
+          });
+          window.__SHOT_READY__ = true;
+        }
+      }
+      tick();
+    </script>
+  </body>
+</html>
