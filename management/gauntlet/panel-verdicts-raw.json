@@ -1,0 +1,325 @@
+{
+  "summary": "Blind image-vs-image gauntlet: 3 fresh critics judge 8 unlabeled pairs of our frames against real PUBG stills",
+  "agentCount": 3,
+  "logs": [
+    "gauntlet: 0/24 frame-level wins, 0/24 times mistaken for the real game"
+  ],
+  "result": {
+    "wins": 0,
+    "total": 24,
+    "fooled": 0,
+    "perPair": {
+      "terrain-vista": {
+        "wins": 0,
+        "votes": 3,
+        "fooled": 0
+      },
+      "village-street": {
+        "wins": 0,
+        "votes": 3,
+        "fooled": 0
+      },
+      "fields-low": {
+        "wins": 0,
+        "votes": 3,
+        "fooled": 0
+      },
+      "forest-edge": {
+        "wins": 0,
+        "votes": 3,
+        "fooled": 0
+      },
+      "weapon-hip": {
+        "wins": 0,
+        "votes": 3,
+        "fooled": 0
+      },
+      "weapon-ads": {
+        "wins": 0,
+        "votes": 3,
+        "fooled": 0
+      },
+      "bots-mid": {
+        "wins": 0,
+        "votes": 3,
+        "fooled": 0
+      },
+      "house-close": {
+        "wins": 0,
+        "votes": 3,
+        "fooled": 0
+      }
+    },
+    "panel": [
+      {
+        "aaaCall": "no",
+        "overallVerdict": "The challenger lost all eight pairs, and in four of them it did not turn up at all: both weapon poses render no viewmodel, the bots pose contains no characters, and the house close-up is an empty field with a shed on the horizon, so those comparisons never actually happened. Where it did compete, the gap is a lighting-and-contact gap rather than a polygon-count gap — nothing in any frame is occluded where it meets the world, so walls are stabbed into terrain with a clean hard line, logs float without contact shadows, and canopy cards hang detached from their trunks. Materials are single-layer albedo with no cavity darkening, no bounce, and no interior geometry behind window openings, which is exactly what makes the buildings read as painted boxes next to the reference's layered grime, vine breakup and raking sun. The reference frames are curated marketing art and that flatters them on composition and VFX, but strip the staging away and the material response alone still separates the two at a glance. This is competent hobby-tier procedural work with one AAA-adjacent asset and not a single AAA-grade shot in the set.",
+        "strongest": "Near-field grass and wheat: real per-blade geometry with a believable density gradient and genuine layered self-occlusion, dense enough that a tight crop of the foreground would survive next to the reference — it only fails on untreated alpha-test sparkle and a total lack of translucency through the blades.",
+        "weakest": "Object grounding — the complete absence of contact occlusion. Nothing touches the world: no AO or dirt transition where walls meet terrain, no contact shadows under props (logs literally hover), no cavity darkening under eaves, canopies detached from trunks. It is the fastest amateur-render tell there is and it is present in every single challenger frame.",
+        "picks": [
+          {
+            "pair": "terrain-vista",
+            "better": "B",
+            "realGame": "B",
+            "margin": "clear",
+            "why": "B's foreground grass is real geometry with per-blade specular and its vehicles carry layered paint/dirt/metal response, while A's treeline is flat two-tone alpha cards over soft-edged splat blotching with no macro breakup and no cast shadow tying any tree to the ground."
+          },
+          {
+            "pair": "village-street",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "A layers vine overgrowth, sill grime and a raking low sun across concrete so every volume reads solid; B's houses are clean boxes with pure-black window rectangles (no frame depth, no interior), a flat red roof plane, and a hard clean line where the wall meets terrain with zero contact occlusion."
+          },
+          {
+            "pair": "fields-low",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "A's arcades resolve column-by-column with cast shadow and per-tile roof relief; in B, magnified crops show canopy cards with stair-stepped aliased edges at two discrete flat brightness values and several leaf cards floating detached from any trunk with no connecting branch geometry."
+          },
+          {
+            "pair": "forest-edge",
+            "better": "B",
+            "realGame": "B",
+            "margin": "clear",
+            "why": "B's bamboo grove attenuates light into depth across many stalk layers with translucent petals in front; A's treeline is a single flat band at one depth with no interpenetration, and although its near wheat is genuinely dense and layered, blade edges sparkle with untreated alpha-test aliasing."
+          },
+          {
+            "pair": "weapon-hip",
+            "better": "B",
+            "realGame": "B",
+            "margin": "decisive",
+            "why": "B is a first-person hipfire frame with a modelled receiver, ejecting shell and muzzle flash lighting the boardwalk, while A renders no viewmodel whatsoever and its near ground is a radially smeared texture stretch with no surface detail."
+          },
+          {
+            "pair": "weapon-ads",
+            "better": "B",
+            "realGame": "B",
+            "margin": "decisive",
+            "why": "B shows a fully modelled AKM mid-fire with hand contact on the furniture and a lit muzzle plume; A is near pixel-identical to its own hipfire frame with no weapon, no scope, and no FOV pull, so the ADS state does not exist visually."
+          },
+          {
+            "pair": "bots-mid",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "A stages readable characters against volcanic rock with lava bounce light and drifting ash, while B contains no characters at all and its barn wall is a repeating plank strip with pure-black 1px gap lines, a tiling knot pattern on fixed pitch, and no AO or dirt transition at the grass contact."
+          },
+          {
+            "pair": "house-close",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "A resolves close-range truck panel dents, cinder-block mortar and spent brass on the dirt; B has no close house, two untextured near-black log cylinders visibly hovering above the grass with no contact shadow, and 1px aliased power lines crawling across the sky."
+          }
+        ]
+      },
+      {
+        "aaaCall": "no",
+        "overallVerdict": "I identified the shipped title correctly in all eight pairs without needing to weigh evidence, and the shipped title won all eight on craft. That said, the test is not a fair fight as framed: every PUBG frame is a curated promotional still with staged action, characters, VFX and full post, while the challenger's are unattended engine captures of empty landscape, and three of them (weapon-hip, weapon-ads, bots-mid, plus house-close) simply failed to include the subject their pose name promises. Even discounting that entirely, the challenger's frames fail on evidence internal to themselves: buildings cast no shadow onto the ground and roof overhangs cast none onto walls, shadowed vegetation crushes to near-black with no sky ambient fill under a bright blue sky, props float above the terrain with detached shadows, and in bots-mid the barn wall is semi-transparent with the ground reading straight through it. What it does have is a real sky and a real ground-cover system, and those two are not embarrassed by the comparison. Everything between them is unfinished.",
+        "strongest": "Ground cover and sky. The dry-grass field system in forest-edge and fields-low holds up at magnification with genuine density, per-blade colour variation, near-field self-shadowing between blades and plausible wind, and the procedural cirrus sky has correct horizon desaturation and haze. Those two systems are the only ones in the set that read as the same conversation as a shipped title.",
+        "weakest": "The lighting model, specifically indirect and occlusion. Nothing sits in the world: large casters throw no shadow at all, there is no contact AO anywhere an object meets terrain, and the shadow term crushes to black instead of picking up sky irradiance. The single most damning frame is bots-mid, where the barn wall is transparent enough to see grass through it and its base terminates on a hard cut with no contact darkening.",
+        "picks": [
+          {
+            "pair": "terrain-vista",
+            "better": "B",
+            "realGame": "B",
+            "margin": "decisive",
+            "why": "A is a clean but inert procedural vista whose ridge is covered in dark mottled splat blotches that read as dirty texture rather than shadow, distant trees carry zero aerial perspective, and field boundaries are hard-edged polygons; B has a focal subject, layered particulate in the explosion, wet paint response on the UAZ bodywork, and foreground grass that occludes the vehicle wheels."
+          },
+          {
+            "pair": "village-street",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "In B the two-storey house casts no shadow at all on the ground and its roof overhang casts none onto the wall, so the whole village floats on the terrain; A has real golden-hour shadow direction, ivy breaking the wall silhouette, decal-level plaster spall and a genuine value gradient from foreground grass to the distant treeline."
+          },
+          {
+            "pair": "fields-low",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "B's treeline is a row of paper cut-outs whose canopies crush to near-black with no sky ambient fill under an obviously bright blue sky, and its white farmhouse has no contact AO; A resolves individual roof tiles, palm-frond translucency and a smoke plume with correct depth falloff across three distance bands."
+          },
+          {
+            "pair": "forest-edge",
+            "better": "B",
+            "realGame": "B",
+            "margin": "clear",
+            "why": "A is the challenger's best frame and its dry-grass field is genuinely convincing at density and per-blade variation, but the instancing radius terminates in a hard horizontal band mid-frame and the mid-distance tufts repeat at identical scale and rotation; B carries cloth folds, wet-ground specular, muzzle flash bounce and a deliberate complementary colour design."
+          },
+          {
+            "pair": "weapon-hip",
+            "better": "B",
+            "realGame": "B",
+            "margin": "decisive",
+            "why": "A contains no first-person weapon anywhere in frame and its foreground ground is a smeared mip-blurred mush with severe directional streaking at grazing incidence; B has a fully modelled rail-and-optic viewmodel with correct near-field depth, ejecting brass and a lamp-lit boardwalk with real specular anisotropy in the planks."
+          },
+          {
+            "pair": "weapon-ads",
+            "better": "B",
+            "realGame": "B",
+            "margin": "decisive",
+            "why": "A is a near-identical reissue of the hip frame with the viewmodel again entirely absent, meaning the ADS and hip poses render effectively the same empty camera; B shows an AKM with laminate-wood specular distinct from the parkerised receiver, a muzzle flash lighting the shooter's glove, and correct occlusion between character, crate and rock."
+          },
+          {
+            "pair": "bots-mid",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "B has no characters in a bot pose and its barn wall is a hard rendering defect: the wall plane is semi-transparent with the grass ground visibly reading through its lower band, the plank gaps are pure black voids, and it meets the terrain on a hard cut with no contact shadow; A has volcanic rim-light, layered smoke and coat leather that holds its form."
+          },
+          {
+            "pair": "house-close",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "B contains no house and two dark pipe props hover clearly above the ground with a detached blob shadow offset to one side, while its grass cards lie flat and edge-on as scribbled wireframe; A has correct sun-angle shadowing on the pickup bed, dust motes and debris in the explosion, and a road surface with believable grit-scale specular."
+          }
+        ]
+      },
+      {
+        "aaaCall": "no",
+        "overallVerdict": "This is not a close contest: the shipped title wins all eight pairs, seven of them decisively. The challenger's real achievement is at distance — terrain silhouette, cloud dome, field and road layout, fence lines, power lines and haystack placement genuinely read as an Erangel-family map at a glance, and the near-field dry grass in forest-edge is the one element that could survive a moving frame. Everything inside about thirty metres collapses: no believable PBR response anywhere, textures repeating on a visibly regular lattice, props rendering as near-black unlit silhouettes, and almost nothing carrying ambient occlusion or a contact shadow to tie it to the ground. It is also damning that four of the eight named poses failed to render their own subject — no weapon in either weapon shot, no bots in bots-mid, no house in house-close — so half the gauntlet was fought with the challenger's own content absent from frame.",
+        "strongest": "Large-scale landscape composition and the near-field dry-grass ground cover: terrain silhouette, cloud dome, and the dense wind-bent wheat in forest-edge and fields-low hold up at distance and are the only elements that would not instantly give it away in motion.",
+        "weakest": "Material response and grounding at close range: every surface is either a flat unlit-looking plane or implausibly plastic-shiny, textures repeat on an obvious lattice (the barn's identical stamped knots), props render as crushed black silhouettes, and there is essentially no ambient occlusion or contact shadow anywhere an object meets the ground.",
+        "picks": [
+          {
+            "pair": "terrain-vista",
+            "better": "B",
+            "realGame": "B",
+            "margin": "decisive",
+            "why": "B has weighted vehicle sheet metal with broken-up specular, layered smoke and debris volume, and grass that visibly parts and casts contact shadow around the tyres, while A's hillside is flat cutout canopies on chalk-white trunks over dithered ground blobs, with the far fields at the same saturation as the near ones so there is no atmospheric depth."
+          },
+          {
+            "pair": "village-street",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "A carries golden-hour bounce, ivy and paint-peel breakup across the barracks and readable silhouettes at three separate depths; B's houses are uniform plaster boxes with windows pasted on as depthless dark rectangles, no eave shadow, no gutter, and no dirt gradient where the wall meets the ground."
+          },
+          {
+            "pair": "fields-low",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "A layers tile roofs, pool water, palm shadow patterns and a smoke plume into real depth, whereas B is one identical wheat tuft stamped across the whole field, a treeline of chalk-trunked flat cards, and a far plate with no clutter transition into it."
+          },
+          {
+            "pair": "forest-edge",
+            "better": "B",
+            "realGame": "B",
+            "margin": "clear",
+            "why": "B has leaf translucency in the bamboo, muzzle bloom lighting the flowers and genuine foreground/midground/background separation; A's near grass is honestly dense and wind-bent, but it dies on a dead-straight horizontal line where the clutter simply stops, with the distant hill carrying the same saturation as the foreground."
+          },
+          {
+            "pair": "weapon-hip",
+            "better": "B",
+            "realGame": "B",
+            "margin": "decisive",
+            "why": "B is an actual hip-fire frame with a modelled receiver and rail, ejecting brass, muzzle bloom on the boardwalk planks and an NPC caught mid-stride, while A shows no weapon on screen at all and the ground under the camera is a smeared, stretched texture from failed anisotropic filtering."
+          },
+          {
+            "pair": "weapon-ads",
+            "better": "B",
+            "realGame": "B",
+            "margin": "decisive",
+            "why": "B shows the AKM correctly shouldered with wood-grain furniture, plausible hand placement and a hot flash lighting the forearm; A is the same frame as its own hip-fire shot at a marginally narrower FOV, with no weapon, no optic and no reticle anywhere."
+          },
+          {
+            "pair": "bots-mid",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "A puts three readable combatant silhouettes against lava and volumetric ash with correct rim separation, while B contains no characters at all and its barn wall repeats one identical elliptical knot on a perfect diagonal lattice under a plastic specular sweep, with 1px black plank gaps that have no interior depth."
+          },
+          {
+            "pair": "house-close",
+            "better": "A",
+            "realGame": "A",
+            "margin": "decisive",
+            "why": "A's pickup carries dirt-mapped panel wear, rust in the bed, an ejecting case and hard sun shadows across the dust; B has no house in frame, and its logs, barrels and fence rails render as near-black silhouettes floating with no contact shadow tying them to the grass."
+          }
+        ]
+      }
+    ]
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Gauntlet"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Synthesis"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "gauntlet:art-director [opus-5/max]",
+      "phaseIndex": 1,
+      "phaseTitle": "Gauntlet",
+      "agentId": "a7a3c59e710565f13",
+      "model": "claude-opus-5",
+      "state": "done",
+      "startedAt": 1786394812034,
+      "queuedAt": 1786394811633,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "The challenger lost all eight pairs, and in four of them it…",
+      "promptPreview": "You are a merciless AAA art director who has shipped open-world titles and signs off on marketing stills. You are judging a BLIND image comparison. You did not make any of these images and you have no stake in the outcome.\n\nIn the project directory there are 8 folders under review/blind/gauntlet/ — one per pair: terrain-vista, village-street, fields-low, forest-edge, weapon-hip, weapon-ads, bots-m…",
+      "lastProgressAt": 1786395080258,
+      "tokens": 117120,
+      "toolCalls": 26,
+      "durationMs": 268224,
+      "resultPreview": "{\"picks\":[{\"pair\":\"terrain-vista\",\"better\":\"B\",\"realGame\":\"B\",\"margin\":\"clear\",\"why\":\"B's foreground grass is real geometry with per-blade specular and its vehicles carry layered paint/dirt/metal response, while A's treeline is flat two-tone alpha cards over soft-edged splat blotching with no macro breakup and no cast shadow tying any tree to the ground.\"},{\"pair\":\"village-street\",\"better\":\"A\",\"re…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "gauntlet:tech-artist [opus-5/max]",
+      "phaseIndex": 1,
+      "phaseTitle": "Gauntlet",
+      "agentId": "a50b422298ed6960d",
+      "model": "claude-opus-5",
+      "state": "done",
+      "startedAt": 1786394812047,
+      "queuedAt": 1786394811633,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "I identified the shipped title correctly in all eight pairs…",
+      "promptPreview": "You are a senior technical artist and physically-based-rendering specialist who judges lighting, material response, shadow quality and rendering artifacts. You are judging a BLIND image comparison. You did not make any of these images and you have no stake in the outcome.\n\nIn the project directory there are 8 folders under review/blind/gauntlet/ — one per pair: terrain-vista, village-street, field…",
+      "lastProgressAt": 1786395151662,
+      "tokens": 124745,
+      "toolCalls": 34,
+      "durationMs": 339614,
+      "resultPreview": "{\"picks\":[{\"pair\":\"terrain-vista\",\"better\":\"B\",\"realGame\":\"B\",\"margin\":\"decisive\",\"why\":\"A is a clean but inert procedural vista whose ridge is covered in dark mottled splat blotches that read as dirty texture rather than shadow, distant trees carry zero aerial perspective, and field boundaries are hard-edged polygons; B has a focal subject, layered particulate in the explosion, wet paint response…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "gauntlet:pubg-veteran [opus-5/max]",
+      "phaseIndex": 1,
+      "phaseTitle": "Gauntlet",
+      "agentId": "a9d59bd68cea133d7",
+      "model": "claude-opus-5",
+      "state": "done",
+      "startedAt": 1786395080263,
+      "queuedAt": 1786394811634,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "This is not a close contest: the shipped title wins all eig…",
+      "promptPreview": "You are a PUBG player with thousands of hours on Erangel who knows exactly what that game looks like on screen. You are judging a BLIND image comparison. You did not make any of these images and you have no stake in the outcome.\n\nIn the project directory there are 8 folders under review/blind/gauntlet/ — one per pair: terrain-vista, village-street, fields-low, forest-edge, weapon-hip, weapon-ads, …",
+      "lastProgressAt": 1786395349496,
+      "tokens": 111863,
+      "toolCalls": 26,
+      "durationMs": 269233,
+      "resultPreview": "{\"picks\":[{\"pair\":\"terrain-vista\",\"better\":\"B\",\"realGame\":\"B\",\"margin\":\"decisive\",\"why\":\"B has weighted vehicle sheet metal with broken-up specular, layered smoke and debris volume, and grass that visibly parts and casts contact shadow around the tyres, while A's hillside is flat cutout canopies on chalk-white trunks over dithered ground blobs, with the far fields at the same saturation as the nea…"
+    }
+  ],
+  "totalTokens": 353728,
+  "totalToolCalls": 86
+}
