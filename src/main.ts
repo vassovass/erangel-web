@@ -245,6 +245,9 @@ async function boot(): Promise<void> {
       shotStats.damageTaken += amount;
       hud.showDamage();
     };
+    // Fall damage: the controller measures the landing, Health owns the number.
+    // Without this line the whole landing model is computed and then discarded.
+    player.onFallDamage = (amount) => health.damage(amount, 0, 0);
     health.onDeath = () => match.playerDied();
     const _muzzle = new THREE.Vector3();
 
