@@ -58,7 +58,19 @@ const NEAR_FULL = 13;
 const NEAR_END = 21;
 // 22.0, not 24.5: the tier's own fade zeroes an instance's scale by 21 m, so
 // every clump placed past that was pure vertex cost for degenerate triangles.
-const NEAR_PLACE = 22.0;
+/**
+ * Placement radius of the REAL-GEOMETRY near band, scaled by the quality
+ * preset. Measured with tools/profile.mjs on the target GPU, vegetation was
+ * 40 ms of a 75 ms frame — more than everything else in the scene combined —
+ * and almost all of it is this band, because its cost is BLADE GEOMETRY and
+ * therefore grows with the square of this radius. Halving it is worth roughly
+ * four times what halving the density is, and the mid-tier cards already cover
+ * from 10 m out, so the band it vacates is drawn either way.
+ */
+// Evaluated per BUILD, not at import: module consts are initialised before
+// parseBootParams() picks the quality preset, so a const here would silently
+// capture the default and every preset below ultra would be a no-op.
+function nearPlace(): number { return 22.0 * quality.vegNear; }
 const NEAR_PER_M2 = 3.9;
 /** Multiplier on near density at the camera, decaying to 1.0 by NEAR_DENSE_END. */
 const NEAR_DENSE_GAIN = 2.1;
@@ -441,7 +453,7 @@ export class Vegetation implements System {
 
   private nearCap(): number {
     return Math.round(
-      Math.PI * NEAR_PLACE * NEAR_PLACE * NEAR_PER_M2 * NEAR_DENSE_GAIN * 0.62 * quality.grassDensity
+      Math.PI * nearPlace() * nearPlace() * NEAR_PER_M2 * NEAR_DENSE_GAIN * 0.62 * quality.grassDensity
     );
   }
 
@@ -668,7 +680,7 @@ export class Vegetation implements System {
       NEAR_PER_M2 * NEAR_DENSE_GAIN * CELL_N * CELL_N * 1.9 * quality.grassDensity
     ));
 
-    this.scatter(CELL_N, NEAR_PLACE, perCell, 0, centreX, centreZ, (x, z, k) => {
+    this.scatter(CELL_N, nearPlace(), perCell, 0, centreX, centreZ, (x, z, k) => {
       const g = this.mask.sample(this.mask.grass, x, z);
       if (g <= 0.02) return false;
       const vig = this.mask.sample(this.mask.vigor, x, z);
@@ -687,7 +699,7 @@ export class Vegetation implements System {
         (1 - 1 / NEAR_DENSE_GAIN) * (1 - smoothstep(NEAR_DENSE_START, NEAR_DENSE_END, dNear)))
         // ...and thinned again across the band where the tier is already
         // shrinking its instances toward zero, which is invisible and free.
-        * (1 - 0.55 * smoothstep(NEAR_FULL, NEAR_PLACE, dNear));
+        * (1 - 0.55 * smoothstep(NEAR_FULL, nearPlace(), dNear));
       const dens = g * (0.46 + 0.54 * vig) * (0.42 + 0.72 * cn);
       if (hash2(k * 7 + 3, Math.floor(x * 4.1) * 733 + Math.floor(z * 4.1) * 269, 77) > dens * grade) return false;
 

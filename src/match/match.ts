@@ -29,6 +29,11 @@ export class Match {
   onKillFeed: ((e: KillEvent) => void) | null = null;
   onStateChange: ((s: MatchState) => void) | null = null;
   private playerCapsuleId: number;
+
+  /** So the player's own weapon can exclude it from its raycasts. */
+  get playerCapsule(): number {
+    return this.playerCapsuleId;
+  }
   private zoneTick = 0;
   private targetInfo: BotTargetInfo = {
     position: new THREE.Vector3(),

@@ -13,6 +13,7 @@ import {
   ToneMappingMode,
   VignetteEffect,
 } from 'postprocessing';
+import { postLevel } from '../core/settings';
 
 // Post stack (pmndrs postprocessing: effects merge into few fullscreen passes,
 // which matters on a fillrate-bound iGPU). MSAA is off; SMAA replaces it.
@@ -45,6 +46,27 @@ export class PostPipeline {
       multisampling: 0,
     });
     this.composer.addPass(new RenderPass(scene, camera));
+
+    // PERF: every effect here is a full-screen pass over every pixel, which is
+    // exactly what this GPU is short of. `lite` keeps the tone curve (the whole
+    // scene is authored against it, so it is not optional) plus a cheap AA and
+    // the grade, and drops bloom — whose mipmap blur chain is the single most
+    // expensive effect in the stack. `min` keeps the tone curve alone.
+    if (postLevel !== 'full') {
+      this.bloom = new BloomEffect({ intensity: 0, luminanceThreshold: 4, mipmapBlur: false });
+      this.toneMapping = new ToneMappingEffect({ mode: ToneMappingMode.ACES_FILMIC });
+      this.vignette = new VignetteEffect({ darkness: 0.34, offset: 0.3 });
+      this.hueSat = new HueSaturationEffect({ saturation: 0.06 });
+      this.contrast = new BrightnessContrastEffect({ brightness: 0.0, contrast: 0.05 });
+      this.grain = new NoiseEffect({ blendFunction: BlendFunction.OVERLAY, premultiply: true });
+      this.grain.blendMode.opacity.value = 0.0;
+      const effects =
+        postLevel === 'lite'
+          ? [this.toneMapping, this.hueSat, this.contrast, this.vignette]
+          : [this.toneMapping];
+      this.composer.addPass(new EffectPass(camera, ...effects));
+      return;
+    }
 
     const smaa = new SMAAEffect();
 

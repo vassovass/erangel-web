@@ -74,6 +74,11 @@ export class PhysicsWorld {
     this.capsules.delete(id);
   }
 
+  /** First collider carrying a tag — test hook for the solidity probe. */
+  firstBox(tag: string): BoxCollider | undefined {
+    return this.boxes.find((b) => b.tag === tag);
+  }
+
   ground(x: number, z: number): GroundSample {
     return { height: this.hf.height(x, z), slope: this.hf.slope(x, z) };
   }

@@ -74,14 +74,23 @@ async function boot(): Promise<void> {
   const built = buildSettlements(hf, factory, physics);
   scene.add(built.group);
 
+  // Ablation switches for the perf pass: ?off=veg,trees,shadow,post,terrain.
+  // Guessing at a bottleneck on an unfamiliar GPU wastes more time than
+  // measuring it, so every major consumer can be removed independently and
+  // benched (tools/profile.mjs drives this).
+  const off = new Set((urlqEarly.get('off') ?? '').split(',').filter(Boolean));
+  if (off.has('shadow')) renderer.shadowMap.enabled = false;
+
   await progress(92, 'vegetation');
-  const vegetation = new Vegetation(hf, camera, physics, (params.seedOverride ?? WORLD_SEED) + 5000);
-  scene.add(vegetation.group);
-  engine.add(vegetation);
+  if (!off.has('veg')) {
+    const vegetation = new Vegetation(hf, camera, physics, (params.seedOverride ?? WORLD_SEED) + 5000);
+    scene.add(vegetation.group);
+    engine.add(vegetation);
+  }
 
   // Post pipeline (SMAA/bloom/grade). ?nopost=1 for raw A/B comparison.
   let post: PostPipeline | null = null;
-  if (!urlqEarly.has('nopost')) {
+  if (!urlqEarly.has('nopost') && !(urlqEarly.get('off') ?? '').includes('post')) {
     post = new PostPipeline(renderer, scene, camera);
     post.setSize(window.innerWidth, window.innerHeight);
     engine.pipeline = post;
@@ -216,6 +225,10 @@ async function boot(): Promise<void> {
     const match = new Match(scene, hf, physics, ballistics, player, health, camera, audio, built.lootSpots);
     const hud = new Hud(weapon, health, match, player);
     let hudRef: Hud | null = hud;
+    // The player's own bullets must ignore the player's own capsule: the muzzle
+    // sits inside it, and any pose that clips the head sphere would otherwise
+    // score a self-headshot.
+    weapon.ownerCapsuleId = match.playerCapsule;
 
     match.onKillFeed = (e) => hud.addFeedLine(e.text);
     match.onStateChange = (s) => {
@@ -228,7 +241,10 @@ async function boot(): Promise<void> {
         });
       }
     };
-    health.onDamage = () => hud.showDamage();
+    health.onDamage = (amount) => {
+      shotStats.damageTaken += amount;
+      hud.showDamage();
+    };
     health.onDeath = () => match.playerDied();
     const _muzzle = new THREE.Vector3();
 
@@ -250,19 +266,33 @@ async function boot(): Promise<void> {
       fx.impact(hit);
       audio.playAt('step-dirt', hit.point.x - camera.position.x, hit.point.y - camera.position.y, hit.point.z - camera.position.z, 10);
     };
-    // Match installs the damage router on top of this feedback hook.
-    ballistics.onTargetHit = (bh) => {
-      const tag = bh.hit.tag.replace('head:', '');
-      if (tag.startsWith('bot:')) {
-        hud.showHitmarker();
-        audio.play(bh.hit.tag.startsWith('head:') ? 'headshot' : 'hit', { volume: 0.5 });
-      }
-    };
+    // NOTHING may assign ballistics.onTargetHit below this line. The hit
+    // feedback is installed ABOVE, before `new Match(...)`, precisely so Match
+    // can wrap it into the damage router; a second bare assignment here threw
+    // that router away and was why no bullet — from the player or from a bot —
+    // ever removed a single point of health. Wrap the existing handler instead.
     ballistics.onTrace = (from, to) => {
       if (from.distanceToSquared(camera.position) > 25) fx.tracer(from, to);
     };
     ballistics.listenerPos = camera.position;
     ballistics.onWhiz = () => audio.play('whiz', { volume: 0.55, detuneJitter: 0.25 });
+
+    // Counters for tools/combat-test.mjs. The original playtest proved ammo
+    // left the magazine; it never proved a bullet arrived anywhere, which is
+    // exactly the gap that let "nothing takes damage" survive to the player.
+    const shotStats = { fired: 0, impacts: 0, targetHits: 0, botShots: 0, damageTaken: 0, tags: [] as string[] };
+    const prevOnShot = weapon.onShot;
+    weapon.onShot = () => { shotStats.fired++; prevOnShot?.(); };
+    const prevKillFeed = match.onKillFeed;
+    match.onKillFeed = (e) => { shotStats.botShots++; prevKillFeed?.(e); };
+    const prevImpact = ballistics.onImpact;
+    ballistics.onImpact = (hit, dir) => { shotStats.impacts++; prevImpact?.(hit, dir); };
+    const prevTarget = ballistics.onTargetHit;
+    ballistics.onTargetHit = (bh) => {
+      shotStats.targetHits++;
+      shotStats.tags.push(bh.hit.tag);
+      prevTarget?.(bh);
+    };
 
     engine.add(player);
     engine.add(weapon);
@@ -333,6 +363,63 @@ async function boot(): Promise<void> {
       },
       teleport: (x: number, z: number) => {
         player.position.set(x, hf.height(x, z), z);
+      },
+      /** Shot bookkeeping + the health of the bot the player is aiming at. */
+      combat: () => {
+        const aim = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        const hit = physics.raycast(camera.position, aim, 400, -1);
+        const tag = hit?.tag.replace('head:', '') ?? '';
+        const idx = tag.startsWith('bot:') ? parseInt(tag.slice(4), 10) : -1;
+        const target = idx >= 0 ? match.bots[idx] : match.bots.find((b) => b.alive);
+        return {
+          ...shotStats,
+          playerHp: health.hp,
+          targetHp: target ? target.hp : -1,
+          aimTag: hit?.tag ?? 'nothing',
+          aimDist: hit ? hit.distance : -1,
+          // Whole-field evidence, so a wrong-bot lookup in the probe cannot be
+          // mistaken for damage not landing.
+          minBotHp: Math.min(...match.bots.map((b) => b.hp)),
+          botsAlive: match.bots.filter((b) => b.alive).length,
+          lastHitTags: shotStats.tags.slice(-4),
+        };
+      },
+      /** Walk the player onto the nearest loot and press the pickup path. */
+      lootProbe: () => {
+        const item = match.loot.items.find((i) => !i.taken);
+        if (!item) return { picked: false, type: null, dist: -1, before: 0, after: 0 };
+        player.position.set(item.pos.x, hf.height(item.pos.x, item.pos.z), item.pos.z);
+        const near = match.lootInReach();
+        const before = weapon.reserve;
+        const beforeHp = health.hp;
+        if (near) {
+          match.loot.take(near);
+          if (near.type === 'ammo') weapon.reserve += 30;
+          else health.heal(near.type === 'medkit' ? 75 : 15);
+        }
+        return {
+          picked: !!near,
+          type: near?.type ?? null,
+          dist: near ? player.position.distanceTo(near.pos) : -1,
+          before,
+          after: weapon.reserve,
+          healedFrom: beforeHp,
+        };
+      },
+      /** Drive the player into a building wall and report how far it got. */
+      solidProbe: () => {
+        const box = physics.firstBox('building');
+        if (!box) return { blocked: false, penetration: -1 };
+        const cx = (box.min.x + box.max.x) / 2;
+        const cz = (box.min.z + box.max.z) / 2;
+        const startX = cx + (box.max.x - box.min.x) / 2 + 3.5;
+        player.position.set(startX, hf.height(startX, cz), cz);
+        for (let i = 0; i < 240; i++) {
+          const res = physics.moveCapsule(player.position, new THREE.Vector3(-0.05, 0, 0), 0, 1 / 60, 0.38);
+          player.position.copy(res.pos);
+        }
+        const penetration = Math.max(0, box.max.x - player.position.x);
+        return { blocked: player.position.x > box.max.x - 0.5, penetration };
       },
       // Stage a firefight for review captures: drop the player at `dist` metres
       // from a living bot, aiming at its chest. The bot's own AI does the rest.

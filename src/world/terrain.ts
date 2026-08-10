@@ -521,6 +521,9 @@ vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
 vWNormal = normalize(mat3(modelMatrix) * objectNormal);`
         );
 
+      if (quality.terrainCheap) {
+        shader.fragmentShader = '#define TERRAIN_CHEAP 1\n' + shader.fragmentShader;
+      }
       shader.fragmentShader = shader.fragmentShader
         .replace(
           '#include <common>',
@@ -600,17 +603,32 @@ float stochMix(vec2 uv, float rnd) {
 vec2 stochUvB(vec2 uv, vec2 o) {
   return vec2(uv.x * gRotC - uv.y * gRotS, uv.x * gRotS + uv.y * gRotC) * 0.61 + o.yx * 2.1 + 17.3;
 }
+// PERF: the anti-tiling pair costs TWO texture fetches plus three noise
+// evaluations per category, and the splat runs up to four categories for both
+// albedo and normal — around sixteen dependent fetches on every ground pixel,
+// which is the largest single fill cost in the frame on an integrated GPU.
+// Below high quality the second fetch is dropped: the field tiles again at ~3.6 m,
+// which is visible if you look for it and is worth roughly a third of the
+// frame time on the target hardware.
 vec4 stochCol(sampler2D tex, vec2 uv, float rnd) {
+#ifdef TERRAIN_CHEAP
+  return texture2D(tex, uv);
+#else
   vec2 o = stochOff(uv, rnd);
   vec4 A = texture2D(tex, uv + o);
   vec4 B = texture2D(tex, stochUvB(uv, o));
   return mix(A, B, stochMix(uv, rnd));
+#endif
 }
 vec3 stochNrm(sampler2D tex, vec2 uv, float rnd) {
+#ifdef TERRAIN_CHEAP
+  return texture2D(tex, uv).xyz * 2.0 - 1.0;
+#else
   vec2 o = stochOff(uv, rnd);
   vec3 A = texture2D(tex, uv + o).xyz * 2.0 - 1.0;
   vec3 B = texture2D(tex, stochUvB(uv, o)).xyz * 2.0 - 1.0;
   return mix(A, B, stochMix(uv, rnd));
+#endif
 }
 
 // --- triplanar (rock only) --------------------------------------------------
@@ -1156,7 +1174,7 @@ vec3 parcelTint(float t) {
     };
 
     // Distinct program cache key so three doesn't share the patched shader.
-    mat.customProgramCacheKey = () => 'terrain-splat-v7';
+    mat.customProgramCacheKey = () => `terrain-splat-v7${quality.terrainCheap ? '-cheap' : ''}`;
     return mat;
   }
 }
