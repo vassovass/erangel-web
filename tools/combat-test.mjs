@@ -57,14 +57,20 @@ try {
   // several degrees up the AKM recoil pattern and every later round sails over
   // the target — correct weapon behaviour, and a bad way to ask "can bullets
   // hit a bot at all".
+  // ADS (right button held) then short bursts. Hip fire at 18 m is a genuine
+  // coin flip by design — testing the hit path through the widest spread the
+  // weapon has makes the result about luck instead of about whether damage
+  // works at all.
+  await page.mouse.down({ button: 'right' });
   for (let i = 0; i < 6; i++) {
-    await page.evaluate(() => window.__TEST__.encounter(18));
-    await new Promise((r) => setTimeout(r, 260));
+    await page.evaluate(() => window.__TEST__.encounter(12));
+    await new Promise((r) => setTimeout(r, 300));
     await page.mouse.down();
-    await new Promise((r) => setTimeout(r, 320));   // ~3 rounds
+    await new Promise((r) => setTimeout(r, 300));   // ~3 rounds
     await page.mouse.up();
-    await new Promise((r) => setTimeout(r, 420));
+    await new Promise((r) => setTimeout(r, 400));
   }
+  await page.mouse.up({ button: 'right' });
   const after = await page.evaluate(() => window.__TEST__.combat());
 
   check('rounds left the muzzle', after.fired > before.fired,
@@ -78,9 +84,11 @@ try {
         `lowest bot hp ${after.minBotHp}, alive ${after.botsAlive}/15`);
 
   // --- 2. bots shoot the player ---------------------------------------------
-  await page.evaluate(() => window.__TEST__.encounter(14));
+  // Stand still, in the open, close. Bots now have a reaction delay and a real
+  // aim cone, so this needs a genuine engagement window, not a glance.
+  await page.evaluate(() => window.__TEST__.encounter(10));
   const p0 = await page.evaluate(() => window.__TEST__.state().playerHp);
-  await new Promise((r) => setTimeout(r, 9000));    // let their AI engage
+  await new Promise((r) => setTimeout(r, 16000));
   const p1 = await page.evaluate(() => window.__TEST__.combat());
   check('PLAYER TAKES RETURN FIRE', p1.damageTaken > 0,
         `cumulative damage taken ${p1.damageTaken.toFixed(1)}`);

@@ -17,6 +17,19 @@ const ENGAGE_RANGE = 190;
 const BURST_MIN = 2;
 const BURST_MAX = 5;
 
+// --- lethality -------------------------------------------------------------
+// A bot that never misses is not difficulty, it is a coin flip the player loses.
+// These three numbers are the whole balance: the aim cone, how fast it tightens
+// once a fight starts, and how hard a single round lands.
+/** Base aim cone, radians (~1.4 deg). */
+const ERR_BASE = 0.025;
+/** Extra cone per metre of range. */
+const ERR_PER_M = 0.00035;
+/** Seconds a bot spends acquiring before its aim tightens to ERR_BASE. */
+const REACTION_S = 0.55;
+/** Per-round damage. 41 meant a 3-round burst killed from full health. */
+const BOT_DAMAGE = 24;
+
 export interface BotTargetInfo {
   position: THREE.Vector3; // eye position of the target (player)
   velocity: THREE.Vector3;
@@ -42,6 +55,8 @@ export class Bot {
   private burstCooldown = 0;
   private shotInterval = 0;
   private aimPitch = 0;
+  /** Seconds this bot has been continuously engaging; drives aim settling. */
+  private engageT = 0;
   private deadT = 0;
   private strafeDir = 1;
   private strafeTimer = 0;
@@ -115,6 +130,7 @@ export class Bot {
       this.perceptionClock = 0.25;
       seesTarget = this.checkVision(target);
       if (seesTarget) {
+        if (this.state !== 'engage') this.engageT = 0;   // fresh acquisition
         this.state = 'engage';
         this.lastSeenTarget.copy(target.position);
         this.alertTimer = 6;
@@ -228,6 +244,7 @@ export class Bot {
   }
 
   private doEngage(dt: number, target: BotTargetInfo, onShoot: (from: THREE.Vector3) => void): void {
+    this.engageT += dt;
     const eye = this.eye();
     const toTarget = target.position.clone().sub(eye);
     const dist = toTarget.length();
@@ -260,7 +277,9 @@ export class Bot {
     // Fire discipline: bursts with cooldowns, error scaled by distance+motion.
     this.burstCooldown -= dt;
     this.shotInterval -= dt;
-    if (dist < ENGAGE_RANGE && this.burstCooldown <= 0) {
+    // Human reaction time before the first round of an engagement. Without it a
+    // bot that rounds a corner fires on the same frame it acquires.
+    if (dist < ENGAGE_RANGE && this.engageT > REACTION_S && this.burstCooldown <= 0) {
       if (this.burstLeft <= 0) {
         this.burstLeft = BURST_MIN + Math.floor(hash2(this.id, this.walkPhase) * (BURST_MAX - BURST_MIN + 1));
       }
@@ -269,18 +288,27 @@ export class Bot {
         this.burstLeft--;
         if (this.burstLeft === 0) this.burstCooldown = 0.7 + hash2(this.id + 3, this.walkPhase) * 1.1;
 
-        // Aim with error: grows with distance, shrinks the longer target is seen.
-        const err = (0.006 + dist * 0.00009) * (1 + this.speed01 * 0.8);
+        // Aim error in RADIANS: a base cone, widened with range and by the
+        // bot's own movement, and widened hard for the first moments of an
+        // engagement so a fight opens with suppressing fire rather than an
+        // instant kill. Tuned so a competent player can win a 1v1 at 20 m.
+        const settle = 1 + 2.4 * Math.max(0, 1 - this.engageT / 1.6);
+        const err = (ERR_BASE + dist * ERR_PER_M) * (1 + this.speed01 * 1.2) * settle;
         const h1 = hash2(this.id * 3, Math.floor(this.walkPhase * 100));
         const h2 = hash2(this.id * 5 + 1, Math.floor(this.walkPhase * 100));
         const aim = toTarget.normalize().clone();
         const right = new THREE.Vector3(aim.z, 0, -aim.x).normalize();
         const up = new THREE.Vector3().crossVectors(right, aim);
-        aim.addScaledVector(right, (h1 - 0.5) * 2 * err * dist * 0.02)
-          .addScaledVector(up, (h2 - 0.5) * 2 * err * dist * 0.02)
+        // ANGULAR error, applied to a unit aim vector. The old form multiplied
+        // by `dist * 0.02`, which at 14 m collapsed the spread to about two
+        // MILLIMETRES: every bot was a perfect shot and killed the player in a
+        // single burst before they could react. A radian offset here is a real
+        // cone — at ERR_BASE it is roughly a 0.5 m spread at 25 m.
+        aim.addScaledVector(right, (h1 - 0.5) * 2 * err)
+          .addScaledVector(up, (h2 - 0.5) * 2 * err)
           .normalize();
         const muzzle = eye.clone().addScaledVector(aim, 0.5);
-        this.ballistics.fire(muzzle, aim, 715, 41, this.capsuleId);
+        this.ballistics.fire(muzzle, aim, 715, BOT_DAMAGE, this.capsuleId);
         onShoot(eye);
       }
     }
