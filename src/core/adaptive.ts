@@ -25,8 +25,13 @@ const COOLDOWN_S = 1.1;
 const UP_MARGIN = 0.82;
 
 export class AdaptiveResolution implements System {
-  /** Index into STEPS. */
-  private idx = 0;
+  /**
+   * Start PART WAY DOWN the ladder, not at native. Climbing up when there is
+   * headroom is free; the first two seconds spent discovering that native
+   * resolution does not fit are two seconds of the worst frame-rate the player
+   * ever sees, and first impressions of an FPS are made in that window.
+   */
+  private idx = 3;
   private samples: number[] = [];
   private cooldown = 1.5;
   private basePixelRatio: number;

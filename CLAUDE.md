@@ -51,6 +51,17 @@ same time. Consequences for every executor:
 - Do not run plain `vite build` (it clobbers other lanes' preview); always use
   your own --outDir.
 
+## Gotchas earned in the finish pass (2026-08-04)
+
+- **Anything that must lie ON the ground uses `terrainSurfaceY()` (gen/terraingen.ts), never `hf.height()`.** The mesh draws flat triangles on a 2.34m lattice; across a hollow that triangle sits centimetres ABOVE the analytic curve, so a decal planted on `hf.height` is buried and only fragments surface — hard-edged dark shards.
+- **A flat, up-facing card is intrinsically ~3x darker than the blades beside it** at this sun elevation, before any albedo choice. If it is also denied transmission and sheen and given the sward-interior ambient case, it renders as charcoal no matter how pale you make the colour. Light ground-lying geometry AS GROUND.
+- **Module-level `const X = base * quality.dial` silently captures the default** — consts initialise before `parseBootParams()` applies the preset. Read quality dials inside a function or a constructor, never at module scope.
+- **Never assign `ballistics.onTargetHit` after `new Match(...)`.** Match WRAPS the existing handler to install the damage router; a second bare assignment throws the router away and nothing in the game takes damage. Wrap, don't assign.
+- **A gameplay test that asserts on side effects proves nothing about the mechanic.** The original playtest checked that firing consumed ammo and that a scripted `damageBot()` killed — both passed for six hours while no bullet ever damaged anyone. `tools/combat-test.mjs` fires real rounds and asserts health actually moves.
+- **Fire SHORT BURSTS when testing hits.** A continuous 2.5s burst walks the muzzle several degrees up the recoil pattern and every later round misses high — correct weapon behaviour, useless as a hit test.
+- **Late-session benchmarks on this laptop are not comparable.** The same build measured 13.3 and 6.6 fps ninety minutes apart under sustained load. Kill stray `vite preview`/Chrome processes and let it settle before trusting a number.
+- Profile, don't guess: `node tools/profile.mjs` ablates each system and prints ms/frame.
+
 ## Review loop (visual items)
 
 Executor builds → `vite build` → capture poses → 3-critic panel reads PNGs vs

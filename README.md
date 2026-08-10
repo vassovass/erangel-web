@@ -38,6 +38,21 @@ npm run build && npm run preview
 Click to deploy. WASD move, Shift sprint, RMB aim, LMB fire, R reload, F pick up,
 C crouch, Q/E lean, M map.
 
+**Quality:** the game picks a preset that aims at a playable frame rate and then
+scales resolution dynamically to hold it. Override with a URL parameter:
+`?q=low`, `?q=medium` (default), `?q=high`, `?q=ultra`. `ultra` is the budget the
+visuals were authored against and what the review captures use — it is a
+screenshot setting, not a play setting.
+
+## Tests
+
+```bash
+node tools/playtest.mjs      # BR loop: movement, firing, reload, zone, win
+node tools/combat-test.mjs   # real bullets damage real bots; loot; solidity
+node tools/profile.mjs       # ablation profiler — ms/frame per system
+node tools/gate.mjs          # typecheck + build + bench + budgets
+```
+
 ## How it was built
 
 The interesting part of this repo is as much the pipeline as the game:
@@ -63,9 +78,17 @@ tokens processed.
 
 ## Honest state
 
-This is a paused work in progress, not a finished game. Known gaps: no visual stream has yet
-satisfied its critic panel, a vegetation ground-carpet bug shows in some fields, and the
-performance pass has not run so frame rates exceed the intended budget on the target GPU.
+A work in progress, not a finished game.
+
+Fixed in the finish pass: the near-field ground shards (three cycles of critic complaints -
+flat litter cards lit as plants instead of ground), and a real gameplay bug where **nothing
+took damage at all** - a duplicate event-handler assignment was overwriting the damage router,
+so bullets hit, played a sound, and removed no health. `tools/combat-test.mjs` now covers that
+path end to end.
+
+Still open: no visual stream has satisfied its critic panel; the frame rate on the target
+Intel HD 620 is well below the 30 fps goal even at the `medium` preset, so the presets and
+dynamic resolution are mitigation rather than a solution; bots do not fight each other.
 
 ## Disclaimer
 
