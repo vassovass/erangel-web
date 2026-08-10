@@ -284,19 +284,19 @@ interface CoverSpec {
 // cluster of tufts rather than a single fan.
 const SPECS: Record<CoverKind, CoverSpec> = {
   // Tall arching meadow tussock — the workhorse.
-  tussock: { count: 26, segs: 5, hMin: 0.70, hMax: 1.04, wMin: 0.0026, wMax: 0.0052, bendMin: 0.38, bendMax: 0.86, rootR: 0.070, tufts: 3, pinnate: false, flowers: 0, seed: 0.16, litter: 3, litterR: 0.42 },
+  tussock: { count: 26, segs: 5, hMin: 0.70, hMax: 1.04, wMin: 0.0026, wMax: 0.0052, bendMin: 0.38, bendMax: 0.86, rootR: 0.070, tufts: 3, pinnate: false, flowers: 0, seed: 0.16, litter: 0, litterR: 0.42 },
   // Dry straw: taller, but never dead straight — cycle 2's 0.08 minimum bend is
   // exactly why the foreground read as drinking straws.
-  dry: { count: 24, segs: 4, hMin: 0.76, hMax: 1.06, wMin: 0.0024, wMax: 0.0046, bendMin: 0.24, bendMax: 0.66, rootR: 0.062, tufts: 3, pinnate: false, flowers: 0, seed: 0.30, litter: 3, litterR: 0.42 },
+  dry: { count: 24, segs: 4, hMin: 0.76, hMax: 1.06, wMin: 0.0024, wMax: 0.0046, bendMin: 0.24, bendMax: 0.66, rootR: 0.062, tufts: 3, pinnate: false, flowers: 0, seed: 0.30, litter: 0, litterR: 0.42 },
   // Short ground-hugging cushion for verges, yards and mown ground.
-  mat: { count: 20, segs: 4, hMin: 0.52, hMax: 0.90, wMin: 0.0030, wMax: 0.0058, bendMin: 0.70, bendMax: 1.25, rootR: 0.095, tufts: 4, pinnate: false, flowers: 0, seed: 0.05, litter: 3, litterR: 0.40 },
+  mat: { count: 20, segs: 4, hMin: 0.52, hMax: 0.90, wMin: 0.0030, wMax: 0.0058, bendMin: 0.70, bendMax: 1.25, rootR: 0.095, tufts: 4, pinnate: false, flowers: 0, seed: 0.05, litter: 0, litterR: 0.40 },
   // Broadleaf dock rosette — a real broadleaf, so it keeps a strap width.
-  dock: { count: 9, segs: 4, hMin: 0.54, hMax: 0.82, wMin: 0.0080, wMax: 0.0140, bendMin: 0.60, bendMax: 1.05, rootR: 0.050, tufts: 2, pinnate: false, flowers: 1, seed: 0, litter: 2, litterR: 0.38 },
+  dock: { count: 9, segs: 4, hMin: 0.54, hMax: 0.82, wMin: 0.0080, wMax: 0.0140, bendMin: 0.60, bendMax: 1.05, rootR: 0.050, tufts: 2, pinnate: false, flowers: 1, seed: 0, litter: 0, litterR: 0.38 },
   // Fern: pinnate fronds, deep green, woodland edges.
-  fern: { count: 7, segs: 4, hMin: 0.66, hMax: 0.94, wMin: 0.0090, wMax: 0.0150, bendMin: 0.55, bendMax: 1.00, rootR: 0.045, tufts: 2, pinnate: true, flowers: 0, seed: 0, litter: 2, litterR: 0.38 },
+  fern: { count: 7, segs: 4, hMin: 0.66, hMax: 0.94, wMin: 0.0090, wMax: 0.0150, bendMin: 0.55, bendMax: 1.00, rootR: 0.045, tufts: 2, pinnate: true, flowers: 0, seed: 0, litter: 0, litterR: 0.38 },
   // Flowering herb: thin stems with small umbels. This is the archetype the
   // flower-field patches concentrate, so it carries a real head count.
-  herb: { count: 14, segs: 4, hMin: 0.72, hMax: 1.00, wMin: 0.0022, wMax: 0.0042, bendMin: 0.22, bendMax: 0.58, rootR: 0.048, tufts: 3, pinnate: false, flowers: 3, seed: 0.10, litter: 2, litterR: 0.36 },
+  herb: { count: 14, segs: 4, hMin: 0.72, hMax: 1.00, wMin: 0.0022, wMax: 0.0042, bendMin: 0.22, bendMax: 0.58, rootR: 0.048, tufts: 3, pinnate: false, flowers: 3, seed: 0.10, litter: 0, litterR: 0.36 },
 };
 
 /** Per-archetype ground-cover clump in unit space. */

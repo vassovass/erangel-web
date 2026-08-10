@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { NoiseField, clamp, hash2, smoothstep, voronoiCell } from '../gen/noise';
-import { MAP_SIZE, type Heightfield } from '../gen/terraingen';
+import { MAP_SIZE, terrainSurfaceY, type Heightfield } from '../gen/terraingen';
 import { makeBarkMaps, deadTreeGeometry } from '../gen/treegen';
 import {
   CLUMP_TILES, COVER_TILES, LEAF_TILES, SWATH_TILES,
@@ -118,24 +118,9 @@ interface BuildingDisc { x: number; z: number; r: number }
  * between the blades stayed a bright yellow-green that no amount of tuning on
  * the carpet's own colour could change.
  */
-const TERRAIN_STEP = 300 / 128;
-
-function terrainSurfaceY(hf: Heightfield, x: number, z: number): number {
-  const gx = (x + MAP_SIZE / 2) / TERRAIN_STEP;
-  const gz = (z + MAP_SIZE / 2) / TERRAIN_STEP;
-  const i = Math.floor(gx);
-  const j = Math.floor(gz);
-  const u = gx - i;
-  const v = gz - j;
-  const x0 = -MAP_SIZE / 2 + i * TERRAIN_STEP;
-  const z0 = -MAP_SIZE / 2 + j * TERRAIN_STEP;
-  const a = hf.height(x0, z0);
-  const b = hf.height(x0 + TERRAIN_STEP, z0);
-  const c = hf.height(x0, z0 + TERRAIN_STEP);
-  if (u + v <= 1) return a + (b - a) * u + (c - a) * v;
-  const d = hf.height(x0 + TERRAIN_STEP, z0 + TERRAIN_STEP);
-  return d + (b - d) * (1 - v) + (c - d) * (1 - u);
-}
+// terrainSurfaceY now lives in gen/terraingen.ts, next to the heightfield it
+// reconstructs, so the carpet, the contact decals and anything else that has to
+// lie on the ground share ONE definition of where the ground is.
 
 /** Crop families, mirrored from the terrain shader's parcelTint(). */
 function parcelTint(t: number): [number, number, number] {

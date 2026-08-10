@@ -14,6 +14,42 @@ export const MAP_SIZE = 1200;
 export const HALF = MAP_SIZE / 2;
 export const SEA_LEVEL = 0;
 
+/**
+ * The lattice the terrain mesh is actually built on: MAP_SIZE / CHUNKS /
+ * CHUNK_QUADS = 1200 / 4 / 128. Kept here, next to the heightfield, because it
+ * is a property of the RENDERED surface that several systems must agree on.
+ */
+export const TERRAIN_STEP = MAP_SIZE / 4 / 128;
+
+/**
+ * Height of the terrain surface AS DRAWN, not as evaluated.
+ *
+ * The mesh samples hf.height on the fixed lattice above and splits every cell
+ * along its b-c anti-diagonal, so between samples the visible surface is a FLAT
+ * TRIANGLE. Across a hollow that triangle sits above the analytic curve by
+ * several centimetres — more than any polygon offset can hide. Anything that has
+ * to lie ON the ground (contact decals, ground carpets, footprint shadows) must
+ * reconstruct this plane; planting it at hf.height + epsilon buries it and only
+ * fragments poke through, which reads as hard-edged dark shards scattered over
+ * the field.
+ */
+export function terrainSurfaceY(hf: Heightfield, x: number, z: number): number {
+  const gx = (x + HALF) / TERRAIN_STEP;
+  const gz = (z + HALF) / TERRAIN_STEP;
+  const i = Math.floor(gx);
+  const j = Math.floor(gz);
+  const u = gx - i;
+  const v = gz - j;
+  const x0 = -HALF + i * TERRAIN_STEP;
+  const z0 = -HALF + j * TERRAIN_STEP;
+  const a = hf.height(x0, z0);
+  const b = hf.height(x0 + TERRAIN_STEP, z0);
+  const c = hf.height(x0, z0 + TERRAIN_STEP);
+  if (u + v <= 1) return a + (b - a) * u + (c - a) * v;
+  const d = hf.height(x0 + TERRAIN_STEP, z0 + TERRAIN_STEP);
+  return d + (b - d) * (1 - v) + (c - d) * (1 - u);
+}
+
 export interface SplatWeights {
   grass: number;
   dirt: number;

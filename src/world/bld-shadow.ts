@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { quality } from '../core/settings';
-import type { Heightfield } from '../gen/terraingen';
+import { terrainSurfaceY, type Heightfield } from '../gen/terraingen';
 
 // Sun shadowing and ground contact for the settlement layer, in two parts.
 //
@@ -275,7 +275,11 @@ export function buildContactDecals(casters: ShadowCaster[], hf: Heightfield): TH
         }
         if (a > 0.004) any = true;
         pos[p * 3] = x;
-        pos[p * 3 + 1] = hf.height(x, z) + LIFT;
+        // The RENDERED plane, not the analytic curve: see terrainSurfaceY. On
+        // hf.height the decal sank under the terrain triangle across every
+        // hollow and only fragments surfaced, which is what put hard-edged
+        // black shards across the near field.
+        pos[p * 3 + 1] = terrainSurfaceY(hf, x, z) + LIFT;
         pos[p * 3 + 2] = z;
         alpha[p] = a * k;
         p++;

@@ -367,13 +367,28 @@ export function bladeMaterial(o: BladeOpts): THREE.ShaderMaterial {
         // frame. Real thatch is a pale, low-contrast mat sitting slightly below
         // the standing grass, so it is mixed halfway to the live sward and the
         // per-card spread is narrowed to 0.88-1.12.
-        vec3 thatch = mix(uThatch, mix(uLush, uStraw, clamp(vDry, 0.0, 1.0)), 0.5)
-                    * (0.88 + 0.24 * vBladeRand);
+        //
+        // CYCLE 5 — the value fix was necessary but not sufficient, because the
+        // problem was never only albedo: a litter card is FLAT and FACES UP, and
+        // at this sun elevation (~24 deg) an up-facing normal takes N.L ~ 0.40
+        // where the vertical blade beside it takes ~0.9 AND collects a
+        // transmission lobe AND a sheen lobe, both of which litter is explicitly
+        // denied below. Three multiplicative penalties on top of the darkest
+        // albedo in the shader is what kept printing hard-edged charcoal
+        // trapezoids over the near field however pale the colour was made.
+        // Litter is GROUND, so it is now coloured and lit as ground: mostly the
+        // sward's own value, a shade under it, and pulled hard onto the terrain
+        // tint below.
+        vec3 thatch = mix(uThatch, mix(uLush, uStraw, clamp(vDry, 0.0, 1.0)), 0.80)
+                    * (0.92 + 0.16 * vBladeRand);
         albedo = mix(albedo, thatch, isLitter);
 
         // Grass inherits the hue of the ground it grows out of — strongly at
         // the root, barely at the tip, and with the tint's own chroma halved.
-        float gt = mix(0.44, 0.12, smoothstep(0.0, 0.55, vH)) * (1.0 - isFlower);
+        // Litter is lying ON the soil, so it takes the ground's hue almost
+        // completely; a standing blade only borrows it at the root.
+        float gt = mix(mix(0.44, 0.12, smoothstep(0.0, 0.55, vH)), 0.86, isLitter)
+                 * (1.0 - isFlower);
         albedo = vegGroundPull(albedo, vTint, uTintGain, gt);
 
         // Contact darkening baked straight into albedo: 0.5 at the base vertex,
@@ -383,8 +398,10 @@ export function bladeMaterial(o: BladeOpts): THREE.ShaderMaterial {
         // the raked directional shadow the woody layer throws across the field.
         albedo *= 1.0 - vShade * 0.60;
 
-        // Root-to-tip occlusion on the light response.
-        float ao = mix(0.48 + 0.52 * smoothstep(0.0, 0.32, vH), 0.82, isLitter);
+        // Root-to-tip occlusion on the light response. Litter lies in the open
+        // on top of the soil, so it is barely occluded — it is not down inside
+        // the sward the way a blade's root is.
+        float ao = mix(0.48 + 0.52 * smoothstep(0.0, 0.32, vH), 0.94, isLitter);
 
         vec3 V = normalize(cameraPosition - vWPos);
         float trans = (0.16 + 0.84 * vH) * (1.0 - isLitter);
@@ -397,7 +414,12 @@ export function bladeMaterial(o: BladeOpts): THREE.ShaderMaterial {
         // Interior of the sward: hemisphere fill falls away with local density
         // and toward the root, which is where the reference gets its deep
         // inter-stalk shadow and therefore its gold lit tips.
-        float ambSc = mix(1.0, 0.42, clamp(vDens, 0.0, 1.0) * (1.0 - vH * 0.85));
+        // Sward-interior fill falls away with density and toward the root — but
+        // litter sits at vH = 0 in the densest part of the clump, so it was
+        // collecting the WORST case of a term meant for stalks buried inside
+        // the sward. It is an open ground surface; it gets the open-sky fill.
+        float ambSc = mix(mix(1.0, 0.42, clamp(vDens, 0.0, 1.0) * (1.0 - vH * 0.85)),
+                          1.0, isLitter);
         vec3 col = vegLight(albedo, normalize(vN), V, normalize(vT), vegShadow(), trans, ao, sheen, ambSc);
 
         gl_FragColor = vec4(col, 1.0);

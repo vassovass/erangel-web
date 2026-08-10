@@ -26,6 +26,7 @@ import { Match } from './match/match';
 import { buildSettlements } from './world/buildings';
 import { Vegetation } from './world/vegetation';
 import { PostPipeline } from './post/pipeline';
+import { AdaptiveResolution } from './core/adaptive';
 import { Minimap } from './ui/minimap';
 
 const loadbar = document.getElementById('loadbar')!;
@@ -79,11 +80,17 @@ async function boot(): Promise<void> {
   engine.add(vegetation);
 
   // Post pipeline (SMAA/bloom/grade). ?nopost=1 for raw A/B comparison.
+  let post: PostPipeline | null = null;
   if (!urlqEarly.has('nopost')) {
-    const post = new PostPipeline(renderer, scene, camera);
+    post = new PostPipeline(renderer, scene, camera);
     post.setSize(window.innerWidth, window.innerHeight);
     engine.pipeline = post;
   }
+  // Dynamic resolution holds the frame-rate floor by trading pixels, which on
+  // this GPU is the only lever that does not delete content. Review captures
+  // and benches pin it via ?scale= / ?adaptive=0 so their frames stay
+  // comparable between cycles.
+  if (params.mode === 'game') engine.add(new AdaptiveResolution(renderer, post, 45));
 
   // Sun shadow volume follows the camera.
   engine.onBeforeRender(() => {
